@@ -187,8 +187,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             parts.append("%s <asm statements; unsupported ATM>" % type_name)
             # parts.append(" %a.%d" % ())
         else:
-            parts.append("%s" % type_name
-)
+            parts.append("%s" % type_name)
         parts.append("ea: %08X" % item.ea)
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
