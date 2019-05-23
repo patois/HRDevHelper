@@ -10,7 +10,7 @@ import ida_moves
 __author__ = "Dennis Elser"
 
 """
-This plugin for the HexRays decompiler creates a graph of a decpmpiled
+This plugin for the HexRays decompiler creates a graph of a decompiled
 function using IDA's internal graph viewer. It zooms in on the graph
 view to 100%, attaches it to the currently active decompiler window and
 sets the focus on the item that the decompiler view's cursor points to.
