@@ -162,29 +162,33 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         op = item.op
         insn = item.cinsn
         expr = item.cexpr
-        parts = [ida_hexrays.get_ctype_name(op)]
+        type_name = ida_hexrays.get_ctype_name(op)
+        parts = []
         if op == ida_hexrays.cot_ptr:
-            parts.append(".%d" % expr.ptrsize)
+            parts.append("%s.%d" % (type_name, expr.ptrsize))
         elif op == ida_hexrays.cot_memptr:
-            parts.append(".%d (m=%d)" % (expr.ptrsize, expr.m))
+            parts.append("%s.%d (m=%d)" % (type_name, expr.ptrsize, expr.m))
         elif op == ida_hexrays.cot_memref:
-            parts.append(" (m=%d)" % (expr.m,))
+            parts.append("%s (m=%d)" % (type_name, expr.m,))
         elif op in [
                 ida_hexrays.cot_obj,
                 ida_hexrays.cot_var]:
             name = self.get_expr_name(expr)
-            parts.append(".%d %s" % (expr.refwidth, name))
+            parts.append("%s.%d %s" % (type_name, expr.refwidth, name))
         elif op in [
                 ida_hexrays.cot_num,
                 ida_hexrays.cot_helper,
                 ida_hexrays.cot_str]:
             name = self.get_expr_name(expr)
-            parts.append(" %s" % (name,))
+            parts.append("%s %s" % (type_name, name,))
         elif op == ida_hexrays.cit_goto:
-            parts.append(" LABEL_%d" % insn.cgoto.label_num)
+            parts.append("%s LABEL_%d" % (type_name, insn.cgoto.label_num))
         elif op == ida_hexrays.cit_asm:
-            parts.append("<asm statements; unsupported ATM>")
+            parts.append("%s <asm statements; unsupported ATM>" % type_name)
             # parts.append(" %a.%d" % ())
+        else:
+            parts.append("%s" % type_name
+)
         parts.append("ea: %08X" % item.ea)
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
