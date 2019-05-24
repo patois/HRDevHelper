@@ -34,6 +34,7 @@ Known issues:
 """
 
 DOCK_POSITION = ida_kernwin.DP_RIGHT # DP_... or None
+ZOOM = 1.0 # default zoom level for graph
 
 CL_WHITE            = ((255)+  (255<<8)+  (255<<16)) #   0
 CL_BLUE             = ((0  )+  (0  <<8)+  (255<<16)) #   1
@@ -68,21 +69,29 @@ CL_ORANGE           = ((255)+  (165<<8)+  (0  <<16)) #  29
 CL_ORCHID           = ((218)+  (112<<8)+  (214<<16)) #  30
 CL_BLACK            = ((0  )+  (0  <<8)+  (0  <<16)) #  31
 
-CL_EDGE_NORMAL = CL_BLACK
-CL_EDGE_HIGHLIGHT = CL_DARKRED
+CL_NODE_NORMAL = CL_BLACK # node default color
+CL_NODE_HIGHLIGHT = CL_DARKRED # node highlight color
 
+# -----------------------------------------------------------------------
 class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
     def __init__(self, cg):
         ida_hexrays.Hexrays_Hooks.__init__(self)
         self.cg = cg
 
-    def func_printed(self, cfunc):
-        # cfunc renewed -> regenerate graph
+    def _update_graph(self, cfunc=None, highlight=None):
         if self.cg:
-            gb = graph_builder_t(self.cg)
-            gb.apply_to(cfunc.body, None)
-            self.cg.set_highlight(None)
+            if cfunc:
+                gb = graph_builder_t(self.cg)
+                gb.apply_to(cfunc.body, None)
+            self.cg.set_highlight(highlight)
+            # TODO: apparently, calling GraphViewer.Refresh() is
+            # a bad idea from within a hook. Causes interr 51058.
             self.cg.Refresh()
+        return
+
+    def func_printed(self, cfunc):
+        # function refreshed
+        self._update_graph(cfunc=cfunc, highlight=None)
         return 0
 
     def curpos(self, vu):
@@ -90,10 +99,10 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         if self.cg:
             vu.get_current_item(ida_hexrays.USE_KEYBOARD)
             highlight = vu.item.e if vu.item.is_citem() else None
-            self.cg.set_highlight(highlight)
-            self.cg.Refresh()
+            self._update_graph(cfunc=None, highlight=highlight)
         return 0
 
+# -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
     def __init__(self, highlight, close_open=False):
         self.title = "HRDevHelper"
@@ -110,6 +119,17 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.succs = []
         self.preds = []
         self.Clear()
+
+    def zoom_and_dock(self, vu_title, zoom, dock_position=None):
+        widget = ida_kernwin.find_widget(self.title)
+        if widget:
+            if dock_position is not None:
+                gli = ida_moves.graph_location_info_t()
+                if ida_graph.viewer_get_gli(gli, widget):
+                    gli.zoom = zoom
+                    ida_graph.viewer_set_gli(widget, gli)
+            ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)
+            self.Refresh()
 
     def set_highlight(self, highlight):
         self.highlight = highlight
@@ -155,8 +175,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return name
 
     def get_node_label(self, n):
-        global CL_EDGE_HIGHLIGHT
-        global CL_EDGE_NORMAL
+        global CL_NODE_HIGHLIGHT
+        global CL_NODE_NORMAL
 
         item = self.items[n]
         op = item.op
@@ -188,6 +208,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             # parts.append(" %a.%d" % ())
         else:
             parts.append("%s" % type_name)
+
         parts.append("ea: %08X" % item.ea)
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
@@ -197,8 +218,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
     def get_node_color(self, n):
         item = self.items[n]
         if self.highlight is not None and item.obj_id == self.highlight.obj_id:
-            return (True, CL_EDGE_HIGHLIGHT)
-        return (False, CL_EDGE_NORMAL)
+            return (True, CL_NODE_HIGHLIGHT)
+        return (False, CL_NODE_NORMAL)
 
     def OnClose(self):
         if self.vd_hooks:
@@ -246,7 +267,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         for p in self.preds:
             idaapi.msg("\t%s" % p)
 
-
+# -----------------------------------------------------------------------
 class graph_builder_t(ida_hexrays.ctree_parentee_t):
 
     def __init__(self, cg):
@@ -291,16 +312,7 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
     def visit_expr(self, e):
         return self.process(e)
 
-def cg_zoom_and_dock(title, vu_title, dock_position=None):
-    widget = ida_kernwin.find_widget(title)
-    if widget:
-        if dock_position is not None:
-            gli = ida_moves.graph_location_info_t()
-            if ida_graph.viewer_get_gli(gli, widget):
-                gli.zoom = 1.0
-                ida_graph.viewer_set_gli(widget, gli)
-        ida_kernwin.set_dock_pos(title, vu_title, dock_position)
-
+# -----------------------------------------------------------------------
 class HRDevHelper(idaapi.plugin_t):
     comment = ''
     help = ''
@@ -314,6 +326,7 @@ class HRDevHelper(idaapi.plugin_t):
 
     def run(self, arg):
         global DOCK_POSITION
+        global ZOOM
 
         w = ida_kernwin.get_current_widget()
         if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
@@ -331,8 +344,7 @@ class HRDevHelper(idaapi.plugin_t):
                 cg.Show()
 
                 # set zoom and dock position
-                cg_zoom_and_dock(cg._title, vu_title, DOCK_POSITION)
-                cg.Refresh()
+                cg.zoom_and_dock(vu_title, ZOOM, DOCK_POSITION)
 
     def term(self):
         pass
