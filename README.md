@@ -12,4 +12,11 @@ scripts and plugins for the HexRays decompiler.
 The plugin can be run with a decompiler window focused, by pressing
 the "Ctrl-Shift-." hotkey.
 
+The color scheme used by the plugin can be customized by pressing 'c'.
+A dialog will appear asking for 5 colors in RGB format.
+Go check out https://www.color-hex.com, pick a palette, and simply
+copy-paste it into the dialog.
+
+Code is heavily based on the vds5.py example that comes with IDAPython.
+
 ![HRDevHelper animated gif](/rsrc/hrdevhelper.gif?raw=true)
