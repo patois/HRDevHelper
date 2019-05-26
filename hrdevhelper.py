@@ -6,6 +6,7 @@ import ida_gdl
 import ida_lines
 import ida_graph
 import ida_moves
+import re
 
 __author__ = "Dennis Elser"
 
@@ -22,6 +23,10 @@ scripts and plugins for the HexRays decompiler.
 The plugin can be run with a decompiler window focused, by pressing
 the "Ctrl-Shift-." hotkey.
 
+The color scheme used by the plugin can be customized by pressing 'c'.
+A dialog will appear asking for 5 colors in RGB format.
+Go check out https://www.color-hex.com, pick a palette, and simply
+copy-paste it into the dialog.
 
 Code is heavily based on the vds5.py example that comes with IDAPython.
 
@@ -31,46 +36,39 @@ Known issues:
   - Internally, the graph is recreated and refreshed every
     time a new item is selected (performance)
   - IDA does not support labels for edges
+  - calling GraphViewer.Refresh() from a hook causes an interr
 """
+
+palette_sbteal = """
+    https://www.color-hex.com/color-palette/309
+    #007777       -> cit_...
+    #006666       -> cit_block
+    #005555       -> cot_call
+    #004444       -> cot_...
+    #003333       -> cit_loop
+"""
+
+palette_good_shelter = """
+    https://www.color-hex.com/color-palette/78342
+    #99944f     (153,148,79)
+    #767b4c     (118,123,76)
+    #54614a     (84,97,74)
+    #314847     (49,72,71)
+    #0e2f44     (14,47,68)
+"""
+
+palette_dark = """
+    #757575      -> highlight
+    #065a21      -> loop
+    #5a063f      -> call
+    #4d4d4d      -> cit
+    #000000      -> cot
+"""
+
+PALETTE_DEFAULT = palette_dark
 
 DOCK_POSITION = ida_kernwin.DP_RIGHT # DP_... or None
 ZOOM = 1.0 # default zoom level for graph
-
-CL_WHITE            = ((255)+  (255<<8)+  (255<<16)) #   0
-CL_BLUE             = ((0  )+  (0  <<8)+  (255<<16)) #   1
-CL_RED              = ((255)+  (0  <<8)+  (0  <<16)) #   2
-CL_GREEN            = ((0  )+  (255<<8)+  (0  <<16)) #   3
-CL_YELLOW           = ((255)+  (255<<8)+  (0  <<16)) #   4
-CL_MAGENTA          = ((255)+  (0  <<8)+  (255<<16)) #   5
-CL_CYAN             = ((0  )+  (255<<8)+  (255<<16)) #   6
-CL_DARKGREY         = ((85 )+  (85 <<8)+  (85 <<16)) #   7
-CL_DARKBLUE         = ((0  )+  (0  <<8)+  (128<<16)) #   8
-CL_DARKRED          = ((128)+  (0  <<8)+  (0  <<16)) #   9
-CL_DARKGREEN        = ((0  )+  (128<<8)+  (0  <<16)) #  10
-CL_DARKYELLOW       = ((128)+  (128<<8)+  (0  <<16)) #  11
-CL_DARKMAGENTA      = ((128)+  (0  <<8)+  (128<<16)) #  12
-CL_DARKCYAN         = ((0  )+  (128<<8)+  (128<<16)) #  13
-CL_GOLD             = ((255)+  (215<<8)+  (0  <<16)) #  14
-CL_LIGHTGREY        = ((170)+  (170<<8)+  (170<<16)) #  15
-CL_LIGHTBLUE        = ((128)+  (128<<8)+  (255<<16)) #  16
-CL_LIGHTRED         = ((255)+  (128<<8)+  (128<<16)) #  17
-CL_LIGHTGREEN       = ((128)+  (255<<8)+  (128<<16)) #  18
-CL_LIGHTYELLOW      = ((255)+  (255<<8)+  (128<<16)) #  19
-CL_LIGHTMAGENTA     = ((255)+  (128<<8)+  (255<<16)) #  20
-CL_LIGHTCYAN        = ((128)+  (255<<8)+  (255<<16)) #  21
-CL_LILAC            = ((238)+  (130<<8)+  (238<<16)) #  22
-CL_TURQUOISE        = ((64 )+  (224<<8)+  (208<<16)) #  23
-CL_AQUAMARINE       = ((127)+  (255<<8)+  (212<<16)) #  24
-CL_KHAKI            = ((240)+  (230<<8)+  (140<<16)) #  25
-CL_PURPLE           = ((160)+  (32 <<8)+  (240<<16)) #  26
-CL_YELLOWGREEN      = ((154)+  (205<<8)+  (50 <<16)) #  27
-CL_PINK             = ((255)+  (192<<8)+  (203<<16)) #  28
-CL_ORANGE           = ((255)+  (165<<8)+  (0  <<16)) #  29
-CL_ORCHID           = ((218)+  (112<<8)+  (214<<16)) #  30
-CL_BLACK            = ((0  )+  (0  <<8)+  (0  <<16)) #  31
-
-CL_NODE_NORMAL = CL_BLACK # node default color
-CL_NODE_HIGHLIGHT = CL_DARKRED # node highlight color
 
 # -----------------------------------------------------------------------
 class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
@@ -105,8 +103,12 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 # -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
     def __init__(self, highlight, close_open=False):
+        global PALETTE_DEFAULT
+
         self.title = "HRDevHelper"
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
+        self.cur_palette = PALETTE_DEFAULT
+        self.apply_colors(self.cur_palette)
         self.items = [] # list of citem_t
         self.highlight = highlight
         self.succs = [] # list of lists of next nodes
@@ -119,6 +121,31 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.succs = []
         self.preds = []
         self.Clear()
+
+    def swapcol(self, x):
+        return (((x & 0x000000FF) << 16) |
+                 (x & 0x0000FF00) |
+                ((x & 0x00FF0000) >> 16))
+
+    def deserialize_color_hex(self, s):
+        x = re.findall(r"[#]\w+\b", s)
+        return [self.swapcol(int(color[1:], 16)) for color in x]
+
+    def apply_colors(self, s):
+        global CL_NODE_CIT
+        global CL_NODE_HIGHLIGHT
+        global CL_NODE_COT_CALL
+        global CL_NODE_COT
+        global CL_NODE_CIT_LOOP
+
+        (CL_NODE_HIGHLIGHT,
+            CL_NODE_CIT_LOOP,
+            CL_NODE_COT_CALL,
+            CL_NODE_CIT,
+            CL_NODE_COT) = self.deserialize_color_hex(s)
+        self.cur_palette = s
+        self.Refresh()
+        return
 
     def zoom_and_dock(self, vu_title, zoom, dock_position=None):
         widget = ida_kernwin.find_widget(self.title)
@@ -176,7 +203,10 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
     def get_node_label(self, n):
         global CL_NODE_HIGHLIGHT
-        global CL_NODE_NORMAL
+        global CL_NODE_CIT
+        global CL_NODE_COT
+        global CL_NODE_COT_CALL
+        global CL_NODE_LILAC
 
         item = self.items[n]
         op = item.op
@@ -216,10 +246,45 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return "\n".join(parts)
 
     def get_node_color(self, n):
+        global CL_NODE_HIGHLIGHT
+        global CL_NODE_CIT
+        global CL_NODE_COT
+        global CL_NODE_COT_CALL
+        global CL_NODE_LILAC
+
         item = self.items[n]
         if self.highlight is not None and item.obj_id == self.highlight.obj_id:
             return (True, CL_NODE_HIGHLIGHT)
-        return (False, CL_NODE_NORMAL)
+
+        # handle COT_
+        if item.is_expr():
+            # handle call
+            if item.op == ida_hexrays.cot_call:
+                return (False, CL_NODE_COT_CALL)
+            return (False, CL_NODE_COT)
+
+        # handle CIT_
+        if item.op in [ida_hexrays.cit_do,
+                ida_hexrays.cit_while, 
+                ida_hexrays.cit_for]:
+            return (False, CL_NODE_CIT_LOOP)
+        return (False, CL_NODE_CIT)
+
+    def OnViewKeydown(self, key, state):
+        global PALETTE_DEFAULT
+
+        c = chr(key & 0xFF)
+
+        if c == 'C':
+            s = ida_kernwin.ask_text(0,
+                self.cur_palette,
+                "Paste palette from color-hex.com")
+            if s:
+                try:
+                    self.apply_colors(s)
+                except:
+                    pass
+        return True
 
     def OnClose(self):
         if self.vd_hooks:
@@ -254,18 +319,19 @@ class cfunc_graph_t(ida_graph.GraphViewer):
     def OnGetText(self, node_id):
         return self[node_id]
 
-    def dump(self):
-        idaapi.msg("%d items:" % len(self.items))
-        for i in self.items:
-            idaapi.msg("\t%s (%08x)" % (i, i.ea))
+    def OnClick(self, node_id):
+        #print "clk & ignore"
+        return False
 
-        idaapi.msg("succs:")
-        for s in self.succs:
-            idaapi.msg("\t%s" % s)
+    def OnDblClick(self, node_id):
+        ida_kernwin.jumpto(self.items[node_id].ea)
+        return True
 
-        idaapi.msg("preds:")
-        for p in self.preds:
-            idaapi.msg("\t%s" % p)
+    def OnHint(self, node_id):
+        """we'll have the hint to display
+        the node's text so it stays readable
+        if zoomed out"""
+        return self.get_node_label(node_id)
 
 # -----------------------------------------------------------------------
 class graph_builder_t(ida_hexrays.ctree_parentee_t):
@@ -283,7 +349,6 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
         for k in self.reverse.keys():
             if i.obj_id == k.obj_id:
                 ida_kernwin.warning("bad ctree - duplicate nodes! (i.ea=%x)" % i.ea)
-                self.cg.dump()
                 return -1
 
         n = self.cg.add_node()
