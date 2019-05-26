@@ -2,7 +2,6 @@ import idaapi
 import ida_pro
 import ida_hexrays
 import ida_kernwin
-import ida_gdl
 import ida_lines
 import ida_graph
 import ida_moves
@@ -41,11 +40,11 @@ Known issues:
 
 palette_sbteal = """
     https://www.color-hex.com/color-palette/309
-    #007777       -> cit_...
-    #006666       -> cit_block
-    #005555       -> cot_call
-    #004444       -> cot_...
-    #003333       -> cit_loop
+    #007777
+    #006666
+    #005555
+    #004444
+    #003333
 """
 
 palette_good_shelter = """
@@ -318,14 +317,18 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
     def OnGetText(self, node_id):
         return self[node_id]
-
+    
     def OnClick(self, node_id):
-        #print "clk & ignore"
-        return False
-
-    def OnDblClick(self, node_id):
         ida_kernwin.jumpto(self.items[node_id].ea)
         return True
+
+    """
+    # moved to OnClick since implementing
+    # this handler breaks the possibility
+    # to dbl-click edges (IDA/IDAPython bug?)
+    def OnDblClick(self, node_id):
+        ida_kernwin.jumpto(self.items[node_id].ea)
+        return True"""
 
     def OnHint(self, node_id):
         """we'll have the hint to display
