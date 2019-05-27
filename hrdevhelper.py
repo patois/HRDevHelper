@@ -81,14 +81,12 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
                 gb = graph_builder_t(self.cg)
                 gb.apply_to(cfunc.body, None)
             self.cg.set_highlight(highlight)
-            # TODO: apparently, calling GraphViewer.Refresh() is
-            # a bad idea from within a hook. Causes interr 51058.
             self.cg.Refresh()
         return
 
-    def func_printed(self, cfunc):
+    def refresh_pseudocode(self, vu):
         # function refreshed
-        self._update_graph(cfunc=cfunc, highlight=None)
+        self._update_graph(cfunc=vu.cfunc, highlight=None)
         return 0
 
     def curpos(self, vu):
@@ -277,7 +275,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         if c == 'C':
             s = ida_kernwin.ask_text(0,
                 self.cur_palette,
-                "Paste palette from color-hex.com")
+                "Edit directory or paste palette from color-hex.com")
             if s:
                 try:
                     self.apply_colors(s)
