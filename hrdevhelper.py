@@ -35,7 +35,6 @@ Known issues:
   - Internally, the graph is recreated and refreshed every
     time a new item is selected (performance)
   - IDA does not support labels for edges
-  - calling GraphViewer.Refresh() from a hook causes an interr
 """
 
 palette_sbteal = """
@@ -129,17 +128,11 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return [self.swapcol(int(color[1:], 16)) for color in x]
 
     def apply_colors(self, s):
-        global CL_NODE_CIT
-        global CL_NODE_HIGHLIGHT
-        global CL_NODE_COT_CALL
-        global CL_NODE_COT
-        global CL_NODE_CIT_LOOP
-
-        (CL_NODE_HIGHLIGHT,
-            CL_NODE_CIT_LOOP,
-            CL_NODE_COT_CALL,
-            CL_NODE_CIT,
-            CL_NODE_COT) = self.deserialize_color_hex(s)
+        (self.CL_NODE_HIGHLIGHT,
+            self.CL_NODE_CIT_LOOP,
+            self.CL_NODE_COT_CALL,
+            self.CL_NODE_CIT,
+            self.CL_NODE_COT) = self.deserialize_color_hex(s)
         self.cur_palette = s
         self.Refresh()
         return
@@ -199,12 +192,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return name
 
     def get_node_label(self, n):
-        global CL_NODE_HIGHLIGHT
-        global CL_NODE_CIT
-        global CL_NODE_COT
-        global CL_NODE_COT_CALL
-        global CL_NODE_LILAC
-
         item = self.items[n]
         op = item.op
         insn = item.cinsn
@@ -243,29 +230,23 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return "\n".join(parts)
 
     def get_node_color(self, n):
-        global CL_NODE_HIGHLIGHT
-        global CL_NODE_CIT
-        global CL_NODE_COT
-        global CL_NODE_COT_CALL
-        global CL_NODE_LILAC
-
         item = self.items[n]
         if self.highlight is not None and item.obj_id == self.highlight.obj_id:
-            return (True, CL_NODE_HIGHLIGHT)
+            return (True, self.CL_NODE_HIGHLIGHT)
 
         # handle COT_
         if item.is_expr():
             # handle call
             if item.op == ida_hexrays.cot_call:
-                return (False, CL_NODE_COT_CALL)
-            return (False, CL_NODE_COT)
+                return (False, self.CL_NODE_COT_CALL)
+            return (False, self.CL_NODE_COT)
 
         # handle CIT_
         if item.op in [ida_hexrays.cit_do,
                 ida_hexrays.cit_while, 
                 ida_hexrays.cit_for]:
-            return (False, CL_NODE_CIT_LOOP)
-        return (False, CL_NODE_CIT)
+            return (False, self.CL_NODE_CIT_LOOP)
+        return (False, self.CL_NODE_CIT)
 
     def OnViewKeydown(self, key, state):
         global PALETTE_DEFAULT
@@ -275,7 +256,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         if c == 'C':
             s = ida_kernwin.ask_text(0,
                 self.cur_palette,
-                "Edit directory or paste palette from color-hex.com")
+                "Edit colors in place or copy-paste palette from color-hex.com")
             if s:
                 try:
                     self.apply_colors(s)
@@ -316,14 +297,12 @@ class cfunc_graph_t(ida_graph.GraphViewer):
     def OnGetText(self, node_id):
         return self[node_id]
     
+    """ disabled for the time being
     def OnClick(self, node_id):
         ida_kernwin.jumpto(self.items[node_id].ea)
-        return True
+        return True"""
 
-    """
-    # moved to OnClick since implementing
-    # this handler breaks the possibility
-    # to dbl-click edges (IDA/IDAPython bug?)
+    """ disabled for the time being
     def OnDblClick(self, node_id):
         ida_kernwin.jumpto(self.items[node_id].ea)
         return True"""
