@@ -140,12 +140,12 @@ class cfunc_graph_t(ida_graph.GraphViewer):
     def zoom_and_dock(self, vu_title, zoom, dock_position=None):
         widget = ida_kernwin.find_widget(self.title)
         if widget:
-            if dock_position is not None:
-                gli = ida_moves.graph_location_info_t()
-                if ida_graph.viewer_get_gli(gli, widget):
-                    gli.zoom = zoom
-                    ida_graph.viewer_set_gli(widget, gli)
-            ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)
+            if dock_position:
+                ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)                
+            gli = ida_moves.graph_location_info_t()
+            if ida_graph.viewer_get_gli(gli, widget):
+                gli.zoom = zoom
+                ida_graph.viewer_set_gli(widget, gli)
             self.Refresh()
 
     def set_highlight(self, highlight):
@@ -370,9 +370,6 @@ class HRDevHelper(idaapi.plugin_t):
         return idaapi.PLUGIN_KEEP if ida_hexrays.init_hexrays_plugin() else idaapi.PLUGIN_SKIP
 
     def run(self, arg):
-        global DOCK_POSITION
-        global ZOOM
-
         w = ida_kernwin.get_current_widget()
         if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
             vu = ida_hexrays.get_widget_vdui(w)
