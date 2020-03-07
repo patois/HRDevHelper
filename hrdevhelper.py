@@ -99,8 +99,6 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 # -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
     def __init__(self, highlight, close_open=False):
-        global PALETTE_DEFAULT
-
         self.title = "HRDevHelper"
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
         self.cur_palette = PALETTE_DEFAULT
@@ -139,13 +137,12 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
     def zoom_and_dock(self, vu_title, zoom, dock_position=None):
         widget = ida_kernwin.find_widget(self.title)
-        if widget:
-            if dock_position:
-                ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)                
+        if widget and dock_position:
             gli = ida_moves.graph_location_info_t()
             if ida_graph.viewer_get_gli(gli, widget):
                 gli.zoom = zoom
                 ida_graph.viewer_set_gli(widget, gli)
+            ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)
             self.Refresh()
 
     def set_highlight(self, highlight):
@@ -249,8 +246,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return (False, self.CL_NODE_CIT)
 
     def OnViewKeydown(self, key, state):
-        global PALETTE_DEFAULT
-
         c = chr(key & 0xFF)
 
         if c == 'C':
@@ -273,24 +268,24 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.Clear()
 
         # nodes
-        for n in xrange(len(self.items)):
+        for n in range(len(self.items)):
             item = self.items[n]
             node_label = self.get_node_label(n)
             hl, color = self.get_node_color(n)
             nid = self.AddNode(("%s" % node_label, color))
-            nodes[item] = nid
+            nodes[item.obj_id] = nid
             if hl:
                 widget = ida_kernwin.find_widget(self._title)
                 ida_graph.viewer_center_on(widget, nid)
 
         # edges
-        for n in xrange(len(self.items)):
+        for n in range(len(self.items)):
             item = self.items[n]
 
-            for i in xrange(self.nsucc(n)):
+            for i in range(self.nsucc(n)):
                 t = self.succ(n, i)
                 # original code removed, edges may not have labels in IDA
-                self.AddEdge(nodes[item], nodes[self.items[t]])
+                self.AddEdge(nodes[item.obj_id], nodes[self.items[t].obj_id])
 
         return True
 
@@ -326,8 +321,8 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
         self.reverse = {} # citem_t -> node#
 
     def add_node(self, i):
-        for k in self.reverse.keys():
-            if i.obj_id == k.obj_id:
+        for k_obj_id in self.reverse.keys():
+            if i.obj_id == k_obj_id:
                 ida_kernwin.warning("bad ctree - duplicate nodes! (i.ea=%x)" % i.ea)
                 return -1
 
@@ -335,7 +330,7 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
         if n <= len(self.cg.items):
             self.cg.items.append(i)
         self.cg.items[n] = i
-        self.reverse[i] = n
+        self.reverse[i.obj_id] = n
         return n
 
     def process(self, i):
@@ -344,8 +339,8 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
             return n
         if len(self.parents) > 1:
             lp = self.parents.back().obj_id
-            for k, v in self.reverse.items():
-                if k.obj_id == lp:
+            for k_obj_id, v in self.reverse.items():
+                if k_obj_id == lp:
                     p = v
                     break
             self.cg.add_edge(p, n)
