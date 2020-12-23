@@ -83,6 +83,28 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
             self.cg.Refresh()
         return
 
+    def create_hint(self, vd):
+        if vd.get_current_item(ida_hexrays.USE_MOUSE):
+            lines = []
+            title = "HRDevHelper:"
+            sep = 20*"-"
+            indent = 2*" "
+            
+            op = vd.item.it.op
+            item_type = ida_hexrays.get_ctype_name(op)
+            item_ea = vd.item.it.ea
+
+            lines.append("%s" % title)
+            lines.append("%s" % (len(title)*"="))
+            lines.append("%sType:\t%s" % (indent, item_type))
+            lines.append("%sea:\t%x" % (indent, item_ea))
+            lines.append("%s" % sep)
+            lines.append("")
+            
+            custom_hints = "\n".join(lines)
+            return (2, custom_hints, len(lines))
+        return 0
+
     def refresh_pseudocode(self, vu):
         # function refreshed
         self._update_graph(cfunc=vu.cfunc, highlight=None)
