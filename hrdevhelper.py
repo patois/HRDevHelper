@@ -6,26 +6,25 @@ import ida_lines
 import ida_graph
 import ida_moves
 import re
+import ida_lines
 
 __author__ = "Dennis Elser"
 
 """
 This plugin for the HexRays decompiler creates a graph of a decompiled
-function using IDA's internal graph viewer. It zooms in on the graph
-view to 100%, attaches it to the currently active decompiler window and
-sets the focus on the item that the decompiler view's cursor points to.
+function's AST using IDA's internal graph viewer. It zooms in on the graph
+view at 100%, attaches it to the currently active decompiler widget and
+focuses on the node that belongs to the current C item.
 
-May be helpful for learning about the different c-tree items of a
-decompiled function which can be used when developing and debugging
-scripts and plugins for the HexRays decompiler.
+This plugin is helpful for learning about the c-tree items of the
+HexRays AST. It be used for developing and debugging scripts and
+plugins for the HexRays decompiler that operate on its AST.
 
 The plugin can be run with a decompiler window focused, by pressing
 the "Ctrl-Shift-." hotkey.
 
 The color scheme used by the plugin can be customized by pressing 'c'.
-A dialog will appear asking for 5 colors in RGB format.
-Go check out https://www.color-hex.com, pick a palette, and simply
-copy-paste it into the dialog.
+A dialog will appear asking for 4 colors in RGB format.
 
 Code is heavily based on the vds5.py example that comes with IDAPython.
 
@@ -37,30 +36,11 @@ Known issues:
   - IDA does not support labels for edges
 """
 
-palette_sbteal = """
-    https://www.color-hex.com/color-palette/309
-    #007777
-    #006666
-    #005555
-    #004444
-    #003333
-"""
-
-palette_good_shelter = """
-    https://www.color-hex.com/color-palette/78342
-    #99944f     (153,148,79)
-    #767b4c     (118,123,76)
-    #54614a     (84,97,74)
-    #314847     (49,72,71)
-    #0e2f44     (14,47,68)
-"""
-
 palette_dark = """
-    #757575      -> highlight
-    #065a21      -> loop
-    #5a063f      -> call
-    #4d4d4d      -> cit
-    #000000      -> cot
+    #663333      -> loop
+    #202050      -> call
+    #000000      -> cit
+    #222222      -> cot
 """
 
 PALETTE_DEFAULT = palette_dark
@@ -74,12 +54,13 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         ida_hexrays.Hexrays_Hooks.__init__(self)
         self.cg = cg
 
-    def _update_graph(self, cfunc=None, highlight=None):
+    def _update_graph(self, cfunc=None, objs=None, highlight=None):
         if self.cg:
             if cfunc:
                 gb = graph_builder_t(self.cg)
                 gb.apply_to(cfunc.body, None)
             self.cg.set_highlight(highlight)
+            self.cg.set_objs(objs)
             self.cg.Refresh()
         return
 
@@ -87,16 +68,26 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         if vd.get_current_item(ida_hexrays.USE_MOUSE):
             lines = []
             title = "HRDevHelper:"
-            sep = 20*"-"
+            sep = 30*"-"
             indent = 2*" "
             
-            op = vd.item.it.op
+            item = vd.item.it
+            op = item.op
+            is_expr = item.is_expr()
             item_type = ida_hexrays.get_ctype_name(op)
-            item_ea = vd.item.it.ea
+            item_ea = item.ea
 
             lines.append("%s" % title)
             lines.append("%s" % (len(title)*"="))
-            lines.append("%sType:\t%s" % (indent, item_type))
+            if is_expr:
+                name = item.cexpr.print1(None)
+                #name = ida_lines.tag_remove(name)
+                #name = ida_pro.str2user(name)
+                lines.append("%sName:\t%s" % (indent, name))
+            lines.append("%sType:\tc%ct_%s" % (
+                indent,
+                "o" if is_expr else "i",
+                item_type))
             lines.append("%sea:\t%x" % (indent, item_ea))
             lines.append("%s" % sep)
             lines.append("")
@@ -110,12 +101,31 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         self._update_graph(cfunc=vu.cfunc, highlight=None)
         return 0
 
+    def _get_obj_ids(self, vu, lnnum):
+        line = vu.cfunc.get_pseudocode()[lnnum].line
+        obj_ids = []
+        tag = ida_lines.COLOR_ON + chr(ida_lines.COLOR_ADDR)
+        pos = line.find(tag)
+        while pos != -1 and len(line[pos+len(tag):]) >= ida_lines.COLOR_ADDR_SIZE:
+            addr = line[pos+len(tag):pos+len(tag)+ida_lines.COLOR_ADDR_SIZE]
+            idx = int(addr, 16)
+            a = ida_hexrays.ctree_anchor_t()
+            a.value = idx
+            if a.is_valid_anchor() and a.is_citem_anchor():
+                item = vu.cfunc.treeitems.at(a.get_index())
+                if item:
+                    obj_ids.append(item.obj_id)
+            pos = line.find(tag, pos+len(tag)+ida_lines.COLOR_ADDR_SIZE)
+        return obj_ids
+
     def curpos(self, vu):
-        # cursor pos changed -> highlight current node
+        # cursor pos changed -> highlight nodes that belong to current line
         if self.cg:
             vu.get_current_item(ida_hexrays.USE_KEYBOARD)
+            lnnum = vu.cpos.lnnum
             highlight = vu.item.e if vu.item.is_citem() else None
-            self._update_graph(cfunc=None, highlight=highlight)
+            objs = self._get_obj_ids(vu, lnnum)
+            self._update_graph(cfunc=None, objs=objs, highlight=highlight.obj_id if highlight else None)
         return 0
 
 # -----------------------------------------------------------------------
@@ -127,6 +137,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.apply_colors(self.cur_palette)
         self.items = [] # list of citem_t
         self.highlight = highlight
+        self.objs = []
         self.succs = [] # list of lists of next nodes
         self.preds = [] # list of lists of previous nodes
         self.vd_hooks = vd_hooks_t(self)
@@ -148,11 +159,11 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return [self.swapcol(int(color[1:], 16)) for color in x]
 
     def apply_colors(self, s):
-        (self.CL_NODE_HIGHLIGHT,
-            self.CL_NODE_CIT_LOOP,
-            self.CL_NODE_COT_CALL,
-            self.CL_NODE_CIT,
-            self.CL_NODE_COT) = self.deserialize_color_hex(s)
+        (self.CL_NODE_CIT_LOOP,
+        self.CL_NODE_COT_CALL,
+        self.CL_NODE_CIT,
+        self.CL_NODE_COT) = self.deserialize_color_hex(s)
+
         self.cur_palette = s
         self.Refresh()
         return
@@ -169,6 +180,9 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
     def set_highlight(self, highlight):
         self.highlight = highlight
+
+    def set_objs(self, objs):
+        self.objs = objs
 
     def nsucc(self, n):
         return len(self.succs[n]) if self.size() else 0
@@ -250,22 +264,34 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
     def get_node_color(self, n):
         item = self.items[n]
-        if self.highlight is not None and item.obj_id == self.highlight.obj_id:
-            return (True, self.CL_NODE_HIGHLIGHT)
+        color = 0
+        focus_node = False
+        brighten_up = 0
+
+        # curent node is item that belongs to current pseudocode line
+        if self.objs is not None and item.obj_id in self.objs:
+            brighten_up += 1
+
+        if self.highlight is not None and item.obj_id == self.highlight:
+            focus_node = True
+            brighten_up += 1
 
         # handle COT_
         if item.is_expr():
             # handle call
             if item.op == ida_hexrays.cot_call:
-                return (False, self.CL_NODE_COT_CALL)
-            return (False, self.CL_NODE_COT)
-
+                color = self.CL_NODE_COT_CALL
+            else:
+                color = self.CL_NODE_COT
         # handle CIT_
-        if item.op in [ida_hexrays.cit_do,
-                ida_hexrays.cit_while, 
-                ida_hexrays.cit_for]:
-            return (False, self.CL_NODE_CIT_LOOP)
-        return (False, self.CL_NODE_CIT)
+        elif ida_hexrays.is_loop(item.op):
+            color = self.CL_NODE_CIT_LOOP
+        else:
+            color = self.CL_NODE_CIT
+
+        color = (color + (0x222222 * brighten_up)) & 0xffffff
+
+        return (focus_node, color)
 
     def OnViewKeydown(self, key, state):
         c = chr(key & 0xFF)
@@ -286,7 +312,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             self.vd_hooks.unhook()
 
     def OnRefresh(self):
-        nodes = {}
+        self.nodes = {}
         self.Clear()
 
         # nodes
@@ -295,7 +321,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             node_label = self.get_node_label(n)
             hl, color = self.get_node_color(n)
             nid = self.AddNode(("%s" % node_label, color))
-            nodes[item.obj_id] = nid
+            self.nodes[item.obj_id] = nid
+
             if hl:
                 widget = ida_kernwin.find_widget(self._title)
                 ida_graph.viewer_center_on(widget, nid)
@@ -307,7 +334,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             for i in range(self.nsucc(n)):
                 t = self.succ(n, i)
                 # original code removed, edges may not have labels in IDA
-                self.AddEdge(nodes[item.obj_id], nodes[self.items[t].obj_id])
+                self.AddEdge(self.nodes[item.obj_id], self.nodes[self.items[t].obj_id])
 
         return True
 
