@@ -24,7 +24,7 @@ The plugin can be run with a decompiler window focused, by pressing
 the "Ctrl-Shift-." hotkey.
 
 The color scheme used by the plugin can be customized by pressing 'c'.
-A dialog will appear asking for 4 colors in RGB format.
+A dialog will appear asking for 6 colors in RGB format.
 
 Code is heavily based on the vds5.py example that comes with IDAPython.
 
@@ -37,10 +37,12 @@ Known issues:
 """
 
 palette_dark = """
-    #663333      -> loop
-    #202050      -> call
-    #000000      -> cit
-    #222222      -> cot
+    #ff8888     -> focused node
+    #ffae1b     -> highlighted node
+    #663333     -> loop
+    #202050     -> call
+    #000000     -> cit
+    #222222     -> cot
 """
 
 PALETTE_DEFAULT = palette_dark
@@ -137,11 +139,32 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.apply_colors(self.cur_palette)
         self.items = [] # list of citem_t
         self.highlight = highlight
+        self.center_node = True
         self.objs = []
         self.succs = [] # list of lists of next nodes
         self.preds = [] # list of lists of previous nodes
         self.vd_hooks = vd_hooks_t(self)
         self.vd_hooks.hook()
+
+        class my_view_hooks_t(ida_kernwin.View_Hooks):
+            def __init__(self, v):
+                ida_kernwin.View_Hooks.__init__(self)
+                self.hook()
+                # let's use weakrefs, so as soon as the last ref to
+                # the 'MyGraph' instance is dropped, the 'my_view_hooks_t'
+                # instance hooks can be automatically un-hooked, and deleted.
+                # (in other words: avoid circular reference.)
+                import weakref
+                self.v = weakref.ref(v)
+
+            def view_loc_changed(self, w, now, was):
+                now_node = now.renderer_info().pos.node
+                was_node = was.renderer_info().pos.node
+                if now_node != was_node:
+                    if self.v().GetWidget() == w:
+                        print("Current node now: #%d (was #%d)" % (now_node, was_node))
+
+        self.my_view_hooks = my_view_hooks_t(self)
 
     def reinit(self):
         self.items = []
@@ -159,7 +182,9 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return [self.swapcol(int(color[1:], 16)) for color in x]
 
     def apply_colors(self, s):
-        (self.CL_NODE_CIT_LOOP,
+        (self.CL_NODE_FOCUS,
+        self.CL_NODE_HIGHLIGHT,
+        self.CL_NODE_CIT_LOOP,
         self.CL_NODE_COT_CALL,
         self.CL_NODE_CIT,
         self.CL_NODE_COT) = self.deserialize_color_hex(s)
@@ -224,7 +249,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         name = ida_pro.str2user(name)
         return name
 
-    def get_node_label(self, n):
+    def get_node_label(self, n, highlight_node=False):
         item = self.items[n]
         op = item.op
         insn = item.cinsn
@@ -260,21 +285,22 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
             parts.append(tstr if tstr else "?")
+        scolor = ida_lines.SCOLOR_EXTRA if highlight_node else ida_lines.SCOLOR_DEFAULT
+        parts = [ida_lines.COLSTR("%s" % part, scolor) for part in parts]
         return "\n".join(parts)
 
-    def get_node_color(self, n):
+    def get_node_info(self, n):
         item = self.items[n]
         color = 0
         focus_node = False
-        brighten_up = 0
+        highlight_node = False
 
         # curent node is item that belongs to current pseudocode line
         if self.objs is not None and item.obj_id in self.objs:
-            brighten_up += 1
+            highlight_node = True
 
         if self.highlight is not None and item.obj_id == self.highlight:
             focus_node = True
-            brighten_up += 1
 
         # handle COT_
         if item.is_expr():
@@ -289,9 +315,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         else:
             color = self.CL_NODE_CIT
 
-        color = (color + (0x222222 * brighten_up)) & 0xffffff
-
-        return (focus_node, color)
+        return (focus_node, highlight_node, color)
 
     def OnViewKeydown(self, key, state):
         c = chr(key & 0xFF)
@@ -305,6 +329,9 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                     self.apply_colors(s)
                 except:
                     pass
+        elif c == 'S':
+            self.center_node = not self.center_node
+            print("%s: sync %sabled" % (HRDevHelper.wanted_name, "en" if self.center_node else "dis"))
         return True
 
     def OnClose(self):
@@ -312,18 +339,39 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             self.vd_hooks.unhook()
 
     def OnRefresh(self):
+
+        """
+
+
+                Event called when the graph is refreshed or first created.
+                From this event you are supposed to create nodes and edges.
+                This callback is mandatory.
+        
+                @note: ***It is important to clear previous nodes before adding nodes.***
+                @return: Returning True tells the graph viewer to use the items. Otherwise old items will be used.
+        """
+
+
         self.nodes = {}
         self.Clear()
 
         # nodes
         for n in range(len(self.items)):
             item = self.items[n]
-            node_label = self.get_node_label(n)
-            hl, color = self.get_node_color(n)
-            nid = self.AddNode(("%s" % node_label, color))
+            focus_node, hl, color = self.get_node_info(n)
+            node_label = self.get_node_label(n, highlight_node=hl)
+            nid = self.AddNode((node_label, color))
+            p = idaapi.node_info_t()
+            p.frame_color = 0x000000
+            if hl:
+                p.frame_color = self.CL_NODE_HIGHLIGHT
+            if focus_node:
+                p.frame_color = self.CL_NODE_FOCUS
+            
+            self.SetNodeInfo(nid, p, idaapi.NIF_FRAME_COLOR)
             self.nodes[item.obj_id] = nid
 
-            if hl:
+            if self.center_node and focus_node:
                 widget = ida_kernwin.find_widget(self._title)
                 ida_graph.viewer_center_on(widget, nid)
 
@@ -333,7 +381,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
             for i in range(self.nsucc(n)):
                 t = self.succ(n, i)
-                # original code removed, edges may not have labels in IDA
                 self.AddEdge(self.nodes[item.obj_id], self.nodes[self.items[t].obj_id])
 
         return True
