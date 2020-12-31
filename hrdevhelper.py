@@ -17,16 +17,8 @@ view at 100%, attaches it to the currently active decompiler widget and
 focuses on the node that belongs to the current C item.
 
 This plugin is helpful for learning about the c-tree items of the
-HexRays AST. It be used for developing and debugging scripts and
-plugins for the HexRays decompiler that operate on its AST.
-
-The plugin can be run with a decompiler window focused, by pressing
-the "Ctrl-Shift-." hotkey.
-
-The color scheme used by the plugin can be customized by pressing 'c'.
-A dialog will appear asking for 6 colors in RGB format.
-
-Code is heavily based on the vds5.py example that comes with IDAPython.
+HexRays AST. It can be used for developing and debugging scripts and
+plugins for the HexRays decompiler.
 
 Known issues:
   - grouping nodes will mess up colors and cause IDA to
@@ -68,6 +60,10 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 
     def create_hint(self, vd):
         if vd.get_current_item(ida_hexrays.USE_MOUSE):
+            lnnum = vd.cpos.lnnum
+            if lnnum < vd.cfunc.hdrlines:
+                return 0
+
             lines = []
             title = "HRDevHelper:"
             sep = 30*"-"
@@ -78,7 +74,6 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
             is_expr = item.is_expr()
             item_type = ida_hexrays.get_ctype_name(op)
             item_ea = item.ea
-
             lines.append("%s" % title)
             lines.append("%s" % (len(title)*"="))
             if is_expr:
@@ -104,8 +99,11 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         return 0
 
     def _get_obj_ids(self, vu, lnnum):
-        line = vu.cfunc.get_pseudocode()[lnnum].line
         obj_ids = []
+        pc = vu.cfunc.get_pseudocode()
+        if lnnum >= len(pc):
+            return obj_ids
+        line = pc[lnnum].line
         tag = ida_lines.COLOR_ON + chr(ida_lines.COLOR_ADDR)
         pos = line.find(tag)
         while pos != -1 and len(line[pos+len(tag):]) >= ida_lines.COLOR_ADDR_SIZE:
@@ -145,26 +143,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.preds = [] # list of lists of previous nodes
         self.vd_hooks = vd_hooks_t(self)
         self.vd_hooks.hook()
-
-        class my_view_hooks_t(ida_kernwin.View_Hooks):
-            def __init__(self, v):
-                ida_kernwin.View_Hooks.__init__(self)
-                self.hook()
-                # let's use weakrefs, so as soon as the last ref to
-                # the 'MyGraph' instance is dropped, the 'my_view_hooks_t'
-                # instance hooks can be automatically un-hooked, and deleted.
-                # (in other words: avoid circular reference.)
-                import weakref
-                self.v = weakref.ref(v)
-
-            def view_loc_changed(self, w, now, was):
-                now_node = now.renderer_info().pos.node
-                was_node = was.renderer_info().pos.node
-                if now_node != was_node:
-                    if self.v().GetWidget() == w:
-                        print("Current node now: #%d (was #%d)" % (now_node, was_node))
-
-        self.my_view_hooks = my_view_hooks_t(self)
 
     def reinit(self):
         self.items = []
