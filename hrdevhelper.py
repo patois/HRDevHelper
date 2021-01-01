@@ -29,7 +29,7 @@ Known issues:
 """
 
 palette_dark = """
-    #ff8888     -> focused node
+    #32ade1     -> focused node
     #ffae1b     -> highlighted node
     #663333     -> loop
     #202050     -> call
@@ -122,9 +122,23 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         # cursor pos changed -> highlight nodes that belong to current line
         if self.cg:
             vu.get_current_item(ida_hexrays.USE_KEYBOARD)
-            lnnum = vu.cpos.lnnum
+            line_numbers = []
+            objs = []
+            w = vu.ct
+            p0 = idaapi.twinpos_t()
+            p1 = idaapi.twinpos_t()
+            if ida_kernwin.read_selection(w, p0, p1):
+                place0 = p0.place(w)
+                place1 = p1.place(w)
+                a = place0.as_simpleline_place_t(place0).n
+                b = place1.as_simpleline_place_t(place1).n
+                line_numbers = [i for i in range(a, b+1)]
+            else:
+                line_numbers = [vu.cpos.lnnum]
+
+            for n in line_numbers:
+                objs += self._get_obj_ids(vu, n)
             highlight = vu.item.e if vu.item.is_citem() else None
-            objs = self._get_obj_ids(vu, lnnum)
             self._update_graph(cfunc=None, objs=objs, highlight=highlight.obj_id if highlight else None)
         return 0
 
