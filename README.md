@@ -13,7 +13,10 @@ Using a dark color IDA theme is recommended.
 
 ## Usage
 The plugin can be run with a decompiler window focused, by pressing
-the "Ctrl-Shift-." hotkey.
+the "Ctrl-Shift-." hotkey. Doing so visualizes the ctree of the currently
+decompiled function. Navigating the decompiled code using the mouse/keyboard
+will highlight graph nodes that are linked to the current decompiled line.
+Selecting multiple lines will have the same effect on the graph. 
 
 ### Hotkeys (view focused on the HRDevHelper widget):
 * S: Toggle sync (center graph on current node/item)
