@@ -16,7 +16,7 @@ __author__ = "https://github.com/patois/"
 PLUGIN_NAME = "HrDevHelper"
 CFG_FILENAME = "%s.cfg" % PLUGIN_NAME
 
-CONFIG_DEFAULT = """; Config file for HRDevHelper (https://github.com/patois/)
+CONFIG_DEFAULT = """; Config file for HRDevHelper (https://github.com/patois/HRDevHelper)
 
 ; options
 ;   center:   center current node
@@ -32,6 +32,9 @@ dockpos=DP_RIGHT
 default=000000
 focus=32ade1
 highlight=ffae1b
+
+; RGB colors in hex
+[node_palette]
 loop=663333
 call=202050
 cit=000000
@@ -79,7 +82,7 @@ def load_cfg(reload=False):
     for section in configfile.sections():
         config[section] = {}
 
-        if section == "frame_palette":
+        if section in ["node_palette", "frame_palette"]:
             for name, value in configfile.items(section):
                 config[section][name] = swapcol(int(value, 0x10))
         elif section == "text_palette":
@@ -207,14 +210,18 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
 
         # apply config
+        #  - options
         self.center_node = config["options"]["center"]
-        self.COLOR_NODE_DEFAULT = config["frame_palette"]["default"]
-        self.COLOR_NODE_HIGHLIGHT = config["frame_palette"]["highlight"]
-        self.COLOR_NODE_FOCUS = config["frame_palette"]["focus"]
-        self.COLOR_NODE_CIT_LOOP = config["frame_palette"]["loop"]
-        self.COLOR_NODE_COT_CALL = config["frame_palette"]["call"]
-        self.COLOR_NODE_CIT = config["frame_palette"]["cit"]
-        self.COLOR_NODE_COT = config["frame_palette"]["cot"]
+        #  - frame colors
+        self.COLOR_FRAME_DEFAULT = config["frame_palette"]["default"]
+        self.COLOR_FRAME_HIGHLIGHT = config["frame_palette"]["highlight"]
+        self.COLOR_FRAME_FOCUS = config["frame_palette"]["focus"]
+        #  - node colors
+        self.COLOR_NODE_CIT_LOOP = config["node_palette"]["loop"]
+        self.COLOR_NODE_COT_CALL = config["node_palette"]["call"]
+        self.COLOR_NODE_CIT = config["node_palette"]["cit"]
+        self.COLOR_NODE_COT = config["node_palette"]["cot"]
+        #   - text colors
         self.COLOR_TEXT_DEFAULT = config["text_palette"]["default"]
         self.COLOR_TEXT_HIGHLIGHT = config["text_palette"]["highlight"]
 
@@ -394,11 +401,11 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             node_label = self._get_node_label(n, highlight_node=highlight_node)
             nid = self.AddNode((node_label, color))
 
-            framecol = self.COLOR_NODE_DEFAULT
+            framecol = self.COLOR_FRAME_DEFAULT
             if highlight_node:
-                framecol = self.COLOR_NODE_HIGHLIGHT
+                framecol = self.COLOR_FRAME_HIGHLIGHT
             if focus_node:
-                framecol = self.COLOR_NODE_FOCUS
+                framecol = self.COLOR_FRAME_FOCUS
 
             p = idaapi.node_info_t()            
             p.frame_color = framecol
