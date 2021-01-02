@@ -13,7 +13,7 @@ import configparser
 
 __author__ = "https://github.com/patois/"
 
-PLUGIN_NAME = "HrDevHelper"
+PLUGIN_NAME = "HRDevHelper"
 CFG_FILENAME = "%s.cfg" % PLUGIN_NAME
 
 CONFIG_DEFAULT = """; Config file for HRDevHelper (https://github.com/patois/HRDevHelper)
@@ -79,27 +79,27 @@ def load_cfg(reload=False):
     configfile.readfp(open(cfg_file))
 
     # read all sections
-    for section in configfile.sections():
-        config[section] = {}
+    try:
+        for section in configfile.sections():
+            config[section] = {}
 
-        if section in ["node_palette", "frame_palette"]:
-            for name, value in configfile.items(section):
-                config[section][name] = swapcol(int(value, 0x10))
-        elif section == "text_palette":
-            for name, value in configfile.items(section):
-                config[section][name] = getattr(globals()["ida_lines"], value)
-        elif section == "options":
-            for name, value in configfile.items(section):
-                try:
+            if section in ["node_palette", "frame_palette"]:
+                for name, value in configfile.items(section):
+                    config[section][name] = swapcol(int(value, 0x10))
+            elif section == "text_palette":
+                for name, value in configfile.items(section):
+                    config[section][name] = getattr(globals()["ida_lines"], value)
+            elif section == "options":
+                for name, value in configfile.items(section):
                     if name in ["center"]:
                         config[section][name] = configfile[section].getboolean(name)
                     elif name in ["zoom"]:
                         config[section][name] = float(value)
                     elif name in ["dockpos"]:
                         config[section][name] = getattr(globals()["ida_kernwin"], value)
-                except:
-                    pass
-    ida_kernwin.msg("done!\n")
+        ida_kernwin.msg("done!\n")
+    except:
+        raise RuntimeError
     return config
 
 # -----------------------------------------------------------------------
@@ -490,10 +490,17 @@ class HRDevHelper(idaapi.plugin_t):
     flags = idaapi.PLUGIN_DRAW
 
     def init(self):
+        result = idaapi.PLUGIN_SKIP
         if ida_hexrays.init_hexrays_plugin():
-            self.config = load_cfg()
-            return idaapi.PLUGIN_KEEP 
-        return idaapi.PLUGIN_SKIP
+            try:
+                self.config = load_cfg()
+            except:
+                ida_kernwin.warning(("%s failed parsing %s.\n"
+                    "If fixing this config file manually doesn't help, please delete the file and re-run the plugin.\n\n"
+                    "The plugin will now terminate." % (PLUGIN_NAME, get_cfg_filename())))
+            else:
+                result = idaapi.PLUGIN_KEEP 
+        return result
 
     def run(self, arg):
         w = ida_kernwin.get_current_widget()
