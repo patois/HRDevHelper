@@ -5,30 +5,110 @@ import ida_kernwin
 import ida_lines
 import ida_graph
 import ida_moves
-import re
 import ida_lines
+import ida_diskio
+import re
+import os
+import configparser
 
 __author__ = "https://github.com/patois/"
 
-palette_dark = """
-    #32ade1     -> focused node
-    #ffae1b     -> highlighted node
-    #663333     -> loop
-    #202050     -> call
-    #000000     -> cit
-    #222222     -> cot
+PLUGIN_NAME = "HrDevHelper"
+CFG_FILENAME = "%s.cfg" % PLUGIN_NAME
+
+CONFIG_DEFAULT = """; Config file for HRDevHelper (https://github.com/patois/)
+
+; options
+;   center:   center current node
+;   zoom:     1.0 = 100%
+;   dockpos:  one of the DP_... constants from ida_kernwin
+[options]
+center=True
+zoom=1.0
+dockpos=DP_RIGHT
+
+; RGB colors in hex
+[frame_palette]
+default=000000
+focus=32ade1
+highlight=ffae1b
+loop=663333
+call=202050
+cit=000000
+cot=222222
+
+; SCOLOR_... constants from ida_lines
+[text_palette]
+default=SCOLOR_DEFAULT
+highlight=SCOLOR_EXTRA
+;highlight=SCOLOR_SYMBOL
 """
 
-PALETTE_DEFAULT = palette_dark
-
-PLUGIN_NAME = "HrDevHelper"
-DOCK_POSITION = ida_kernwin.DP_RIGHT # DP_... or None
-ZOOM = 1.0 # default zoom level for graph
+# -----------------------------------------------------------------------
+def get_cfg_filename():
+    """returns full path for config file."""
+    return os.path.join(
+        ida_diskio.get_user_idadir(),
+        "plugins",
+        "%s" % CFG_FILENAME)
 
 # -----------------------------------------------------------------------
-def get_obj_ids(vu, lnnum):
+def load_cfg(reload=False):
+    """loads HRDevHelper configuration."""
+    
+    config = {}
+    cfg_file = get_cfg_filename()
+    ida_kernwin.msg("%s: %sloading %s...\n" % (PLUGIN_NAME,
+        "re" if reload else "",
+        cfg_file))
+    if not os.path.isfile(cfg_file):
+        ida_kernwin.msg("%s: default configuration (%s) does not exist!\n" % (PLUGIN_NAME, cfg_file))
+        ida_kernwin.msg("Creating default configuration\n")
+        try:
+            with open(cfg_file, "w") as f:
+                f.write("%s" % CONFIG_DEFAULT)
+        except:
+            ida_kernwin.msg("failed!\n")
+            return config
+        return load_cfg(reload=True)
+
+    configfile = configparser.RawConfigParser()
+    configfile.readfp(open(cfg_file))
+
+    # read all sections
+    for section in configfile.sections():
+        config[section] = {}
+
+        if section == "frame_palette":
+            for name, value in configfile.items(section):
+                config[section][name] = swapcol(int(value, 0x10))
+        elif section == "text_palette":
+            for name, value in configfile.items(section):
+                config[section][name] = getattr(globals()["ida_lines"], value)
+        elif section == "options":
+            for name, value in configfile.items(section):
+                try:
+                    if name in ["center"]:
+                        config[section][name] = configfile[section].getboolean(name)
+                    elif name in ["zoom"]:
+                        config[section][name] = float(value)
+                    elif name in ["dockpos"]:
+                        config[section][name] = getattr(globals()["ida_kernwin"], value)
+                except:
+                    pass
+    ida_kernwin.msg("done!\n")
+    return config
+
+# -----------------------------------------------------------------------
+def swapcol(x):
+    return (((x & 0x000000FF) << 16) |
+                (x & 0x0000FF00) |
+            ((x & 0x00FF0000) >> 16))
+
+# -----------------------------------------------------------------------
+def get_obj_ids(vdui, lnnum):
     obj_ids = []
-    pc = vu.cfunc.get_pseudocode()
+    pc = vdui.cfunc.get_pseudocode()
     if lnnum >= len(pc):
         return obj_ids
     line = pc[lnnum].line
@@ -40,13 +120,13 @@ def get_obj_ids(vu, lnnum):
         a = ida_hexrays.ctree_anchor_t()
         a.value = idx
         if a.is_valid_anchor() and a.is_citem_anchor():
-            item = vu.cfunc.treeitems.at(a.get_index())
+            item = vdui.cfunc.treeitems.at(a.get_index())
             if item:
                 obj_ids.append(item.obj_id)
         pos = line.find(tag, pos+len(tag)+ida_lines.COLOR_ADDR_SIZE)
     return obj_ids
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------
 def get_selected_lines(vdui):
     vdui.get_current_item(ida_hexrays.USE_KEYBOARD)
     line_numbers = []
@@ -106,7 +186,7 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 
     def refresh_pseudocode(self, vu):
         # function refreshed
-        self.cg.update(cfunc=vu.cfunc, highlight=None)
+        self.cg.update(cfunc=vu.cfunc, focus=None)
         return 0
 
     def curpos(self, vu):
@@ -116,23 +196,35 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
             line_numbers = get_selected_lines(vu)
             for n in line_numbers:
                 objs += get_obj_ids(vu, n)
-            highlight = vu.item.e if vu.item.is_citem() else None
-            self.cg.update(cfunc=None, objs=objs, highlight=highlight.obj_id if highlight else None)
+            focusitem = vu.item.e if vu.item.is_citem() else None
+            self.cg.update(cfunc=None, objs=objs, focus=focusitem.obj_id if focusitem else None)
         return 0
 
 # -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
-    def __init__(self, highlight, close_open=False):
+    def __init__(self, focus, config, close_open=False):
         self.title = PLUGIN_NAME
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
-        self.cur_palette = PALETTE_DEFAULT
-        self._apply_colors(self.cur_palette)
+
+        # apply config
+        self.center_node = config["options"]["center"]
+        self.COLOR_NODE_DEFAULT = config["frame_palette"]["default"]
+        self.COLOR_NODE_HIGHLIGHT = config["frame_palette"]["highlight"]
+        self.COLOR_NODE_FOCUS = config["frame_palette"]["focus"]
+        self.COLOR_NODE_CIT_LOOP = config["frame_palette"]["loop"]
+        self.COLOR_NODE_COT_CALL = config["frame_palette"]["call"]
+        self.COLOR_NODE_CIT = config["frame_palette"]["cit"]
+        self.COLOR_NODE_COT = config["frame_palette"]["cot"]
+        self.COLOR_TEXT_DEFAULT = config["text_palette"]["default"]
+        self.COLOR_TEXT_HIGHLIGHT = config["text_palette"]["highlight"]
+
         self.items = [] # list of citem_t
-        self.highlight = highlight
-        self.center_node = True
+        self._set_focus(focus)
+
         self.objs = []
         self.succs = [] # list of lists of next nodes
         self.preds = [] # list of lists of previous nodes
+
         self.vd_hooks = vd_hooks_t(self)
         self.vd_hooks.hook()
 
@@ -171,38 +263,17 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)
             self.Refresh()
 
-    def update(self, cfunc=None, objs=None, highlight=None):
+    def update(self, cfunc=None, objs=None, focus=None):
         if cfunc:
             gb = graph_builder_t(self)
             gb.apply_to(cfunc.body, None)
-        self._set_highlight(highlight)
+        self._set_focus(focus)
         self._set_objs(objs)
         self.Refresh()
         return
 
-    def _apply_colors(self, s):
-        (self.CL_NODE_FOCUS,
-        self.CL_NODE_HIGHLIGHT,
-        self.CL_NODE_CIT_LOOP,
-        self.CL_NODE_COT_CALL,
-        self.CL_NODE_CIT,
-        self.CL_NODE_COT) = self._deserialize_color_hex(s)
-
-        self.cur_palette = s
-        self.Refresh()
-        return
-
-    def _swapcol(self, x):
-        return (((x & 0x000000FF) << 16) |
-                 (x & 0x0000FF00) |
-                ((x & 0x00FF0000) >> 16))
-
-    def _deserialize_color_hex(self, s):
-        x = re.findall(r"[#]\w+\b", s)
-        return [self._swapcol(int(color[1:], 16)) for color in x]
-
-    def _set_highlight(self, highlight):
-        self.highlight = highlight
+    def _set_focus(self, focus):
+        self.focus = focus
 
     def _set_objs(self, objs):
         self.objs = objs
@@ -260,11 +331,11 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         else:
             parts.append("%s" % type_name)
 
-        parts.append("ea: %08X" % item.ea)
+        parts.append("ea: %08x" % item.ea)
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
             parts.append(tstr if tstr else "?")
-        scolor = ida_lines.SCOLOR_EXTRA if highlight_node else ida_lines.SCOLOR_DEFAULT
+        scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
         parts = [ida_lines.COLSTR("%s" % part, scolor) for part in parts]
         return "\n".join(parts)
 
@@ -274,25 +345,25 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         focus_node = False
         highlight_node = False
 
-        # curent node is item that belongs to current pseudocode line
+        # is curent node an item that belongs to current pseudocode line?
         if self.objs is not None and item.obj_id in self.objs:
             highlight_node = True
 
-        if self.highlight is not None and item.obj_id == self.highlight:
+        if self.focus is not None and item.obj_id == self.focus:
             focus_node = True
 
         # handle COT_
         if item.is_expr():
             # handle call
             if item.op == ida_hexrays.cot_call:
-                color = self.CL_NODE_COT_CALL
+                color = self.COLOR_NODE_COT_CALL
             else:
-                color = self.CL_NODE_COT
+                color = self.COLOR_NODE_COT
         # handle CIT_
         elif ida_hexrays.is_loop(item.op):
-            color = self.CL_NODE_CIT_LOOP
+            color = self.COLOR_NODE_CIT_LOOP
         else:
-            color = self.CL_NODE_CIT
+            color = self.COLOR_NODE_CIT
 
         return (focus_node, highlight_node, color)
 
@@ -300,17 +371,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         c = chr(key & 0xFF)
 
         if c == 'C':
-            s = ida_kernwin.ask_text(0,
-                self.cur_palette,
-                "Edit colors in place or copy-paste palette from color-hex.com")
-            if s:
-                try:
-                    self.apply_colors(s)
-                except:
-                    pass
-        elif c == 'S':
             self.center_node = not self.center_node
-            print("%s: sync %sabled" % (PLUGIN_NAME, "en" if self.center_node else "dis"))
+            ida_kernwin.msg("%s: centering graph %sabled\n" % (PLUGIN_NAME, "en" if self.center_node else "dis"))
         return True
 
     def OnClose(self):
@@ -328,16 +390,18 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         # nodes
         for n in range(len(self.items)):
             item = self.items[n]
-            focus_node, hl, color = self._get_node_info(n)
-            node_label = self._get_node_label(n, highlight_node=hl)
+            focus_node, highlight_node, color = self._get_node_info(n)
+            node_label = self._get_node_label(n, highlight_node=highlight_node)
             nid = self.AddNode((node_label, color))
-            p = idaapi.node_info_t()
-            p.frame_color = 0x000000
-            if hl:
-                p.frame_color = self.CL_NODE_HIGHLIGHT
+
+            framecol = self.COLOR_NODE_DEFAULT
+            if highlight_node:
+                framecol = self.COLOR_NODE_HIGHLIGHT
             if focus_node:
-                p.frame_color = self.CL_NODE_FOCUS
-            
+                framecol = self.COLOR_NODE_FOCUS
+
+            p = idaapi.node_info_t()            
+            p.frame_color = framecol
             self.SetNodeInfo(nid, p, idaapi.NIF_FRAME_COLOR)
             self.nodes[item.obj_id] = nid
 
@@ -419,7 +483,10 @@ class HRDevHelper(idaapi.plugin_t):
     flags = idaapi.PLUGIN_DRAW
 
     def init(self):
-        return idaapi.PLUGIN_KEEP if ida_hexrays.init_hexrays_plugin() else idaapi.PLUGIN_SKIP
+        if ida_hexrays.init_hexrays_plugin():
+            self.config = load_cfg()
+            return idaapi.PLUGIN_KEEP 
+        return idaapi.PLUGIN_SKIP
 
     def run(self, arg):
         w = ida_kernwin.get_current_widget()
@@ -428,9 +495,9 @@ class HRDevHelper(idaapi.plugin_t):
             vu_title = ida_kernwin.get_widget_title(w)
             if vu:
                 vu.get_current_item(ida_hexrays.USE_KEYBOARD)
-                highlight = vu.item.e if vu.item.is_citem() else None
+                focusitem = vu.item.e if vu.item.is_citem() else None
                 # create graphviewer
-                cg = cfunc_graph_t(highlight, True)
+                cg = cfunc_graph_t(focusitem, self.config, close_open=True)
                 # build graph for current function
                 gb = graph_builder_t(cg)
                 gb.apply_to(vu.cfunc.body, None)
@@ -438,7 +505,7 @@ class HRDevHelper(idaapi.plugin_t):
                 cg.Show()
 
                 # set zoom and dock position
-                cg.zoom_and_dock(vu_title, ZOOM, DOCK_POSITION)
+                cg.zoom_and_dock(vu_title, self.config["options"]["zoom"], self.config["options"]["dockpos"])
 
     def term(self):
         pass
