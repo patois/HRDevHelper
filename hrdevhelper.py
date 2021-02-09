@@ -52,7 +52,6 @@ def get_cfg_filename():
     """returns full path for config file."""
     return os.path.join(
         ida_diskio.get_user_idadir(),
-        "plugins",
         "%s" % CFG_FILENAME)
 
 # -----------------------------------------------------------------------
