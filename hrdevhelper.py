@@ -323,6 +323,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 ida_hexrays.cot_var]:
             name = self._get_expr_name(expr)
             parts.append("%s.%d %s" % (type_name, expr.refwidth, name))
+            if op is ida_hexrays.cot_obj:
+                parts.append("obj_ea: %x" % item.obj_ea)
         elif op in [
                 ida_hexrays.cot_num,
                 ida_hexrays.cot_helper,
@@ -337,7 +339,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         else:
             parts.append("%s" % type_name)
 
-        parts.append("ea: %08x" % item.ea)
+        parts.append("ea: %x" % item.ea)
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
             parts.append(tstr if tstr else "?")
@@ -429,7 +431,17 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         return self[node_id]
     
     def OnDblClick(self, node_id):
-        ida_kernwin.jumpto(self.items[node_id].ea)
+        target_ea = self.items[node_id].ea
+        r = ida_kernwin.get_highlight(ida_kernwin.get_current_viewer())
+        if r:
+            text, _ = r
+            # ghetto-convert hex strings to int
+            try:
+                target_ea = int(text, 16)
+            except ValueError:
+                pass
+
+        ida_kernwin.jumpto(target_ea)
         return True
 
     def OnHint(self, node_id):
