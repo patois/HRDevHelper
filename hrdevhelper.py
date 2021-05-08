@@ -1,4 +1,4 @@
-import idaapi
+import ida_idaapi
 import ida_pro
 import ida_hexrays
 import ida_kernwin
@@ -151,6 +151,7 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
         ida_hexrays.Hexrays_Hooks.__init__(self)
         self.cg = cg
 
+    """
     def create_hint(self, vd):
         if vd.get_current_item(ida_hexrays.USE_MOUSE):
             lnnum = vd.cpos.lnnum
@@ -185,7 +186,7 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
             custom_hints = "\n".join(lines)
             return (2, custom_hints, len(lines))
         return 0
-
+    """
     def refresh_pseudocode(self, vu):
         # function refreshed
         self.cg.update(cfunc=vu.cfunc, focus=None)
@@ -193,7 +194,7 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 
     def curpos(self, vu):
         # cursor pos changed -> highlight nodes that belong to current line
-        if self.cg:
+        if self.cg and vu.get_current_item(ida_hexrays.USE_MOUSE):
             objs = []
             line_numbers = get_selected_lines(vu)
             for n in line_numbers:
@@ -204,26 +205,35 @@ class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
 
 # -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
-    def __init__(self, focus, config, close_open=False):
-        self.title = PLUGIN_NAME
+    def __init__(self, focus, config, close_open=False, subtitle=None):
+        self.title = "%s%s" % (PLUGIN_NAME, " [%s]" % subtitle if subtitle else "") 
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
+        self.is_subgraph = subtitle is not None
 
         # apply config
         #  - options
-        self.center_node = config["options"]["center"]
+        self.config = config
+        self.center_node = self.config["options"]["center"]
         #  - frame colors
-        self.COLOR_FRAME_DEFAULT = config["frame_palette"]["default"]
-        self.COLOR_FRAME_HIGHLIGHT = config["frame_palette"]["highlight"]
-        self.COLOR_FRAME_FOCUS = config["frame_palette"]["focus"]
+        self.COLOR_FRAME_DEFAULT = self.config["frame_palette"]["default"]
+        self.COLOR_FRAME_HIGHLIGHT = self.config["frame_palette"]["highlight"]
+        self.COLOR_FRAME_FOCUS = self.config["frame_palette"]["focus"]
         #  - node colors
-        self.COLOR_NODE_CIT_LOOP = config["node_palette"]["loop"]
-        self.COLOR_NODE_COT_CALL = config["node_palette"]["call"]
-        self.COLOR_NODE_CIT = config["node_palette"]["cit"]
-        self.COLOR_NODE_COT = config["node_palette"]["cot"]
-        #   - text colors
-        self.COLOR_TEXT_DEFAULT = config["text_palette"]["default"]
-        self.COLOR_TEXT_HIGHLIGHT = config["text_palette"]["highlight"]
+        self.COLOR_NODE_CIT_LOOP = self.config["node_palette"]["loop"]
+        self.COLOR_NODE_COT_CALL = self.config["node_palette"]["call"]
+        self.COLOR_NODE_CIT = self.config["node_palette"]["cit"]
+        self.COLOR_NODE_COT = self.config["node_palette"]["cot"]
+        #  - text colors
+        self.COLOR_TEXT_DEFAULT = self.config["text_palette"]["default"]
+        self.COLOR_TEXT_HIGHLIGHT = self.config["text_palette"]["highlight"]
+        #  - other settings
+        self.zoom = self.config["options"]["zoom"]
+        self.dock_position = self.config["options"]["dockpos"]
 
+        # can be toggled with hotkey in order for the graph
+        # to include debug/verbose output
+        self.debug = False
+        self.redraw = True
         self.items = [] # list of citem_t
         self._set_focus(focus)
 
@@ -259,20 +269,24 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self.preds[y].append(x)
         self.succs[x].append(y)
 
-    def zoom_and_dock(self, vu_title, zoom, dock_position=None):
-        widget = ida_kernwin.find_widget(self.title)
-        if widget and dock_position:
+    def zoom_and_dock(self, target):
+        widget = ida_kernwin.get_current_widget()
+        if widget and self.dock_position:
             gli = ida_moves.graph_location_info_t()
             if ida_graph.viewer_get_gli(gli, widget):
-                gli.zoom = zoom
+                gli.zoom = self.zoom
                 ida_graph.viewer_set_gli(widget, gli)
-            ida_kernwin.set_dock_pos(self.title, vu_title, dock_position)
+            ida_kernwin.set_dock_pos(
+                ida_kernwin.get_widget_title(widget),
+                ida_kernwin.get_widget_title(target),
+                self.dock_position)
             self.Refresh()
 
     def update(self, cfunc=None, objs=None, focus=None):
         if cfunc:
-            gb = graph_builder_t(self)
+            gb = graph_builder_t(self, cfunc)
             gb.apply_to(cfunc.body, None)
+            self.redraw = True
         self._set_focus(focus)
         self._set_objs(objs)
         self.Refresh()
@@ -312,6 +326,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         expr = item.cexpr
         type_name = ida_hexrays.get_ctype_name(op)
         parts = []
+
         if op == ida_hexrays.cot_ptr:
             parts.append("%s.%d" % (type_name, expr.ptrsize))
         elif op == ida_hexrays.cot_memptr:
@@ -323,8 +338,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 ida_hexrays.cot_var]:
             name = self._get_expr_name(expr)
             parts.append("%s.%d %s" % (type_name, expr.refwidth, name))
-            if op is ida_hexrays.cot_obj:
-                parts.append("obj_ea: %x" % item.obj_ea)
         elif op in [
                 ida_hexrays.cot_num,
                 ida_hexrays.cot_helper,
@@ -338,11 +351,56 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             # parts.append(" %a.%d" % ())
         else:
             parts.append("%s" % type_name)
-
         parts.append("ea: %x" % item.ea)
+
+        # add type
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
             parts.append(tstr if tstr else "?")
+
+        if self.debug:
+            if op is ida_hexrays.cot_var:
+                parts.append("idx: %d" % expr.v.idx)
+                lv = expr.v.getv()                        
+                if lv:
+                    parts.append("width: %d" % lv.width)
+                    parts.append("defblk: %d" % lv.defblk)
+                    parts.append("cmt: %s" % lv.cmt)
+                    parts.append("arg_var: %r" % lv.is_arg_var)
+                    parts.append("thisarg: %r" % lv.is_thisarg())
+                    parts.append("result_var: %r" % lv.is_result_var)
+                    parts.append("used_byref: %r" % lv.is_used_byref())
+                    parts.append("mapdst_var: %r" % lv.is_mapdst_var)
+                    parts.append("overlapped_var: %r" % lv.is_overlapped_var)
+                    parts.append("floating_var: %r" % lv.is_floating_var)
+                    parts.append("typed: %r" % lv.typed)
+                    if self.debug > 1:
+                        parts.append("divisor: %d" % lv.divisor)
+                        parts.append("automapped: %r" % lv.is_automapped())
+                        parts.append("fake_var: %r" % lv.is_fake_var)
+                        parts.append("spoiled_var: %r" % lv.is_spoiled_var)
+                        parts.append("noptr_var: %r" % lv.is_noptr_var())
+                        parts.append("forced_var: %r" % lv.is_forced_var())
+                        parts.append("dummy_arg: %r" % lv.is_dummy_arg())
+                        parts.append("used: %r" % lv.used)
+                        parts.append("user_info: %r" % lv.has_user_info)
+                        parts.append("user_name: %r" % lv.has_user_name)
+                        parts.append("user_type: %r" % lv.has_user_type)
+                        parts.append("regname: %r" % lv.has_regname())
+                        parts.append("mreg_done: %r" % lv.mreg_done)
+                        parts.append("nice_name: %r" % lv.has_nice_name)
+                        parts.append("unknown_width: %r" % lv.is_unknown_width)
+                        parts.append("in_asm: %r" % lv.in_asm())
+                        parts.append("notarg: %r" % lv.is_notarg())
+                        parts.append("decl_unused: %r" % lv.is_decl_unused())
+            elif op == ida_hexrays.cit_block:
+                # how do we acquire the bock num?
+                # parts.append("block num: %d" % insn.label_num)
+                pass
+            elif op is ida_hexrays.cot_obj:
+                    parts.append("obj_ea: %x" % expr.obj_ea)
+                    parts.append("obj_id: %x" % expr.obj_id)
+
         scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
         parts = [ida_lines.COLSTR("%s" % part, scolor) for part in parts]
         return "\n".join(parts)
@@ -381,6 +439,11 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         if c == 'C':
             self.center_node = not self.center_node
             ida_kernwin.msg("%s: centering graph %sabled\n" % (PLUGIN_NAME, "en" if self.center_node else "dis"))
+        elif c == 'D':
+            self.debug = (self.debug+1)%3
+            ida_kernwin.msg("%s: debug %d\n" % (PLUGIN_NAME, self.debug))
+            self.redraw = True
+            self.Refresh()
         return True
 
     def OnClose(self):
@@ -391,41 +454,68 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         """
         @return: Returning True tells the graph viewer to use the items. Otherwise old items will be used.
         """
+        focus_node_id = None
+        if self.redraw:
+            self.nodes = {}
+            self.Clear()
 
-        self.nodes = {}
-        self.Clear()
+            # nodes
+            for n in range(len(self.items)):
+                item = self.items[n]
+                focus_node, highlight_node, color = self._get_node_info(n)
+                node_label = self._get_node_label(n, highlight_node=highlight_node)
+                nid = self.AddNode((node_label, color))
 
-        # nodes
+                framecol = self.COLOR_FRAME_DEFAULT
+                if highlight_node:
+                    framecol = self.COLOR_FRAME_HIGHLIGHT
+                if focus_node:
+                    framecol = self.COLOR_FRAME_FOCUS
+
+                p = ida_graph.node_info_t()            
+                p.frame_color = framecol
+                self.SetNodeInfo(nid, p, ida_graph.NIF_FRAME_COLOR)
+                self.nodes[item.obj_id] = nid
+
+                if focus_node:
+                    focus_node_id = nid
+
+            # edges
+            for n in range(len(self.items)):
+                item = self.items[n]
+
+                for i in range(self._nsucc(n)):
+                    t = self._succ(n, i)
+                    self.AddEdge(self.nodes[item.obj_id], self.nodes[self.items[t].obj_id])
+
+            if self.center_node and focus_node_id:
+                widget = ida_kernwin.find_widget(self._title)
+                ida_graph.viewer_center_on(widget, focus_node_id)
+
+            self.redraw = False
+            # use new graph
+            return True
+
         for n in range(len(self.items)):
             item = self.items[n]
             focus_node, highlight_node, color = self._get_node_info(n)
-            node_label = self._get_node_label(n, highlight_node=highlight_node)
-            nid = self.AddNode((node_label, color))
+            nid = self.nodes[item.obj_id]
 
             framecol = self.COLOR_FRAME_DEFAULT
             if highlight_node:
                 framecol = self.COLOR_FRAME_HIGHLIGHT
             if focus_node:
+                focus_node_id = nid
                 framecol = self.COLOR_FRAME_FOCUS
 
-            p = idaapi.node_info_t()            
+            p = ida_graph.node_info_t()            
             p.frame_color = framecol
-            self.SetNodeInfo(nid, p, idaapi.NIF_FRAME_COLOR)
-            self.nodes[item.obj_id] = nid
+            self.SetNodeInfo(nid, p, ida_graph.NIF_FRAME_COLOR)
 
-            if self.center_node and focus_node:
-                widget = ida_kernwin.find_widget(self._title)
-                ida_graph.viewer_center_on(widget, nid)
-
-        # edges
-        for n in range(len(self.items)):
-            item = self.items[n]
-
-            for i in range(self._nsucc(n)):
-                t = self._succ(n, i)
-                self.AddEdge(self.nodes[item.obj_id], self.nodes[self.items[t].obj_id])
-
-        return True
+        if self.center_node and focus_node_id:
+            widget = ida_kernwin.find_widget(self._title)
+            ida_graph.viewer_center_on(widget, focus_node_id)
+        return False
 
     def OnGetText(self, node_id):
         return self[node_id]
@@ -449,22 +539,24 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
 # -----------------------------------------------------------------------
 class graph_builder_t(ida_hexrays.ctree_parentee_t):
-
-    def __init__(self, cg):
+    def __init__(self, cg, cf=None):
         ida_hexrays.ctree_parentee_t.__init__(self)
-        self.init(cg)
-
-    def init(self, cg):
         self.cg = cg
+        self.n_items = len(cf.treeitems) if cf else None
+        self.n_processed = 0
         self.cg.reinit()
         self.reverse = {} # citem_t -> node#
+        if self.n_items:
+            ida_kernwin.show_wait_box("%s: building graph" % PLUGIN_NAME)
 
     def _add_node(self, i):
+        """
+        # commented for performance reasons
         for k_obj_id in self.reverse.keys():
             if i.obj_id == k_obj_id:
                 ida_kernwin.warning("bad ctree - duplicate nodes! (i.ea=%x)" % i.ea)
                 return -1
-
+        """
         n = self.cg.add_node()
         if n <= len(self.cg.items):
             self.cg.items.append(i)
@@ -474,6 +566,7 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
 
     def _process(self, i):
         n = self._add_node(i)
+        self.n_processed += 1
         if n < 0:
             return n
         if len(self.parents) > 1:
@@ -483,6 +576,11 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
                     p = v
                     break
             self.cg.add_edge(p, n)
+        if self.n_items:
+            if self.n_processed >= self.n_items:
+                ida_kernwin.hide_wait_box()
+            if ida_kernwin.user_cancelled():
+                return 1
         return 0
 
     def visit_insn(self, i):
@@ -491,49 +589,85 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
     def visit_expr(self, e):
         return self._process(e)
 
+def show_ctree_graph(create_subgraph=False):
+    w = ida_kernwin.get_current_widget()
+    if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
+        vu = ida_hexrays.get_widget_vdui(w)
+        if vu:
+            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
+            focusitem = vu.item.e if vu.item.is_citem() else None
+            sub = None
+            if create_subgraph:
+                if not focusitem:
+                    return
+                sub = "subgraph %x" % focusitem.obj_id
+            # create graphviewer
+            cg = cfunc_graph_t(
+                focusitem,
+                HRDevHelper.config,
+                close_open=True,
+                subtitle=sub)
+            # build graph for current function
+            gb = graph_builder_t(cg, None if create_subgraph else vu.cfunc)
+            gb.apply_to(focusitem if create_subgraph else vu.cfunc.body, vu.cfunc.body)
+            # show graph
+            cg.Show()
+            # set zoom and dock position
+            cg.zoom_and_dock(w)
+    return
+
+class hotkey_handler(ida_kernwin.action_handler_t):
+    def __init__(self, create_subgraph=False):
+        ida_kernwin.action_handler_t.__init__(self)
+        self.create_subgraph = create_subgraph
+
+    def activate(self, ctx):
+        show_ctree_graph(create_subgraph=self.create_subgraph)
+        return 1
+
+    def update(self, ctx):
+        return ida_kernwin.AST_ENABLE_FOR_WIDGET if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE else ida_kernwin.AST_DISABLE_FOR_WIDGET
+
 # -----------------------------------------------------------------------
-class HRDevHelper(idaapi.plugin_t):
+class HRDevHelper(ida_idaapi.plugin_t):
     comment = ""
     help = ""
     wanted_name = PLUGIN_NAME
     wanted_hotkey = "Ctrl-Shift-."
     hxehook = None
-    flags = idaapi.PLUGIN_DRAW
+    flags = ida_idaapi.PLUGIN_DRAW
+    actname = "%s:subgraph" % PLUGIN_NAME
+    config = None
+
+    def _register_hotkey(self):
+        if not ida_kernwin.register_action(ida_kernwin.action_desc_t(
+            HRDevHelper.actname,
+            "%s - isolate subgraph" % PLUGIN_NAME,
+            hotkey_handler(create_subgraph=True),
+            "S",
+            None,
+            -1)):
+                ida_kernwin.warning("%s: failed registering action" % PLUGIN_NAME)
 
     def init(self):
-        result = idaapi.PLUGIN_SKIP
+        result = ida_idaapi.PLUGIN_SKIP
         if ida_hexrays.init_hexrays_plugin():
             try:
-                self.config = load_cfg()
+                HRDevHelper.config = load_cfg()
             except:
                 ida_kernwin.warning(("%s failed parsing %s.\n"
                     "If fixing this config file manually doesn't help, please delete the file and re-run the plugin.\n\n"
                     "The plugin will now terminate." % (PLUGIN_NAME, get_cfg_filename())))
             else:
-                result = idaapi.PLUGIN_KEEP 
+                self._register_hotkey()
+                result = ida_idaapi.PLUGIN_KEEP 
         return result
 
     def run(self, arg):
-        w = ida_kernwin.get_current_widget()
-        if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
-            vu = ida_hexrays.get_widget_vdui(w)
-            vu_title = ida_kernwin.get_widget_title(w)
-            if vu:
-                vu.get_current_item(ida_hexrays.USE_KEYBOARD)
-                focusitem = vu.item.e if vu.item.is_citem() else None
-                # create graphviewer
-                cg = cfunc_graph_t(focusitem, self.config, close_open=True)
-                # build graph for current function
-                gb = graph_builder_t(cg)
-                gb.apply_to(vu.cfunc.body, None)
-                # show graph
-                cg.Show()
-
-                # set zoom and dock position
-                cg.zoom_and_dock(vu_title, self.config["options"]["zoom"], self.config["options"]["dockpos"])
+        show_ctree_graph()
 
     def term(self):
-        pass
+        ida_kernwin.unregister_action(HRDevHelper.actname)
 
 # -----------------------------------------------------------------------
 def PLUGIN_ENTRY():   
