@@ -19,12 +19,15 @@ for the first time.
 ## Installation
 Copy hrdevhelper.py to ./IDA/plugins/
 
-## Usage
-The plugin can be run with a decompiler window focused, by pressing
-the "Ctrl-Shift-." hotkey. Doing so visualizes the ctree of the currently
-decompiled function. Navigating the decompiled code using the mouse/keyboard
-will highlight graph nodes that are linked to the current decompiled line.
-Selecting multiple lines will highlight corresponding nodes the graph. 
+## Plugin Hotkeys (focus on any decompiler view)
+* "Ctrl-Shift-." creates a graph of the current decompiled function
+* "S" creates a subgraph of the current decompiled function. The subgraph's root
+  is the item pointed to by the decompiler view's text cursor.
 
-### Hotkeys (view focused on the HRDevHelper widget):
-* C: Dynamically toggle "center on current item/node" functionality.
+The freshly generated graph can be navigated using the mouse and/or keyboard.
+Nodes that are linked to the current decompiled line are highlighted in the graph.
+Making a selection of lines will highlight corresponding graph nodes.
+
+### Graph Hotkeys (focus on any HRDevHelper graph/subgraph):
+* C: Toggle "center on current item/node" functionality.
+* D: Increase debug/verbosity of particular nodes 
