@@ -21,8 +21,10 @@ Copy hrdevhelper.py to ./IDA/plugins/
 
 ## Plugin Hotkeys (focus on any decompiler view)
 * "Ctrl-Shift-." creates a graph of the current decompiled function
-* "S" creates a subgraph of the current decompiled function. The subgraph's root
+* "Ctrl-." creates a subgraph of the current decompiled function. The subgraph's root
   is the item pointed to by the decompiler view's text cursor.
+* "Ctrl-Alt-L" dumps current function's ctree to a lambda expression (copy/paste and use with hxtb-shell)
+* "Ctrl-L" dumps current sub-ctree to lambda expression (copy/paste and use with hxtb-shell)
 
 The freshly generated graph can be navigated using the mouse and/or keyboard.
 Nodes that are linked to the current decompiled line are highlighted in the graph.
