@@ -351,14 +351,15 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             # parts.append(" %a.%d" % ())
         else:
             parts.append("%s" % type_name)
-        parts.append("ea: %x" % item.ea)
 
+        parts.append("ea: %x" % item.ea)
         # add type
         if item.is_expr() and not expr.type.empty():
             tstr = expr.type._print()
             parts.append(tstr if tstr else "?")
 
         if self.debug:
+            parts.append("obj_id: %x" % expr.obj_id)
             if op is ida_hexrays.cot_var:
                 parts.append("idx: %d" % expr.v.idx)
                 lv = expr.v.getv()                        
@@ -393,13 +394,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                         parts.append("in_asm: %r" % lv.in_asm())
                         parts.append("notarg: %r" % lv.is_notarg())
                         parts.append("decl_unused: %r" % lv.is_decl_unused())
-            elif op == ida_hexrays.cit_block:
-                # how do we acquire the bock num?
-                # parts.append("block num: %d" % insn.label_num)
-                pass
             elif op is ida_hexrays.cot_obj:
                     parts.append("obj_ea: %x" % expr.obj_ea)
-                    parts.append("obj_id: %x" % expr.obj_id)
 
         scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
         parts = [ida_lines.COLSTR("%s" % part, scolor) for part in parts]
@@ -589,6 +585,119 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
     def visit_expr(self, e):
         return self._process(e)
 
+# -----------------------------------------------------------------------
+class graph_dumper_t(ida_hexrays.ctree_parentee_t):
+    def __init__(self):
+        ida_hexrays.ctree_parentee_t.__init__(self)
+        self.lines = []
+        self.nodes = {}
+
+    def _add_node(self, obj_id, text):
+        self.nodes[obj_id] = text
+
+    def _process(self, i):
+        if len(self.parents) > 1:
+            p = self.parents.back()
+            ci = i.cexpr if i.is_expr() else i.cinsn
+            pi = p.cexpr if p.is_expr() else p.cinsn
+            elem = "<error>"
+            if pi.op is ida_hexrays.cot_call:
+                if pi.x.obj_id == ci.obj_id:
+                    elem = "x"
+                else:
+                    argc = len(pi.a)
+                    for j in range(argc):
+                        if ci.obj_id == pi.a[j].obj_id:
+                            elem = "a[%d]" % j
+                            break
+            elif pi.op is ida_hexrays.cit_expr:
+                if pi.cexpr.obj_id == ci.obj_id:
+                    elem = "cexpr"
+            elif pi.op is ida_hexrays.cit_block:
+                blockc = len(pi.cblock)
+                for j in range(blockc):
+                    if pi.cblock[j].obj_id == ci.obj_id:
+                        elem = "cblock[%d]" % j
+                        break
+            elif pi.op is ida_hexrays.cit_if:
+                if pi.cif.expr.obj_id == ci.obj_id:
+                    elem = "cif.expr"
+                elif pi.cif.ithen.obj_id == ci.obj_id:
+                    elem = "cif.ithen"
+                elif pi.cif.ielse and pi.cif.ielse.obj_id == ci.obj_id:
+                    elem = "cif.ielse"
+            elif pi.op is ida_hexrays.cit_return:
+                if pi.creturn.expr.obj_id == ci.obj_id:
+                    elem = "creturn.expr"
+            elif pi.op is ida_hexrays.cit_for:
+                if pi.cfor.expr.obj_id == ci.obj_id:
+                    elem = "cfor.expr"
+                elif pi.cfor.init.obj_id == ci.obj_id:
+                    elem = "cfor.init"
+                elif pi.cfor.step.obj_id == ci.obj_id:
+                    elem = "cfor.step"
+                elif pi.cfor.body.obj_id == ci.obj_id:
+                    elem = "cfor.body"
+            elif pi.op is ida_hexrays.cit_while:
+                if pi.cwhile.expr.obj_id == ci.obj_id:
+                    elem = "cwhile.expr"
+                elif pi.cwhile.body.obj_id == ci.obj_id:
+                    elem = "cwhile.body"
+            elif pi.op is ida_hexrays.cit_do:
+                if pi.cdo.expr.obj_id == ci.obj_id:
+                    elem = "cdo.expr"
+                elif pi.cdo.body.obj_id == ci.obj_id:
+                    elem = "cdo.body"
+            elif pi.op is ida_hexrays.cit_switch:
+                switchc = len(pi.cswitch.cases)
+                if pi.cswitch.expr.obj_id == ci.obj_id:
+                    elem = "cswitch.expr"
+                else:
+                    for j in range(switchc):
+                        if pi.cswitch.cases[j].obj_id == ci.obj_id:
+                            elem = "cswitch.cases[%d]" % j
+                            break
+            elif pi.op is ida_hexrays.cit_goto:
+                pass
+            else:
+                if ida_hexrays.op_uses_x(pi.op) and pi.x.obj_id == ci.obj_id:
+                    elem = "x"
+                elif ida_hexrays.op_uses_y(pi.op) and pi.y.obj_id == ci.obj_id:
+                    elem = "y"
+                elif ida_hexrays.op_uses_z(pi.op) and pi.z.obj_id == ci.obj_id:
+                    elem = "z"
+            elem_text = "%s.%s" % (self.nodes[pi.obj_id], elem)
+            self._add_node(ci.obj_id if i.is_expr() else ci.obj_id, elem_text)
+            self.lines.append("%s.op is idaapi.c%ct_%s" % (elem_text, "o" if i.is_expr() else "i", ida_hexrays.get_ctype_name(ci.op)))
+        else:
+            isexpr = i.is_expr()
+            self.lines.append("i.op is idaapi.c%ct_%s" % ("o" if isexpr else "i", ida_hexrays.get_ctype_name(i.cexpr.op if isexpr else i.cinsn.op)))
+            self._add_node(i.cexpr.obj_id if isexpr else i.cinsn.obj_id, "i")
+        return 0
+
+    def visit_insn(self, i):
+        return self._process(i)
+
+    def visit_expr(self, e):
+        return self._process(e)
+
+# -----------------------------------------------------------------------
+def dump_ctree_to_lambda(create_subgraph=False):
+    w = ida_kernwin.get_current_widget()
+    if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
+        vu = ida_hexrays.get_widget_vdui(w)
+        if vu:
+            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
+            focusitem = vu.cfunc.body
+            if create_subgraph:
+                focusitem = vu.item.e if vu.item.is_citem() else None
+            if focusitem:
+                gd = graph_dumper_t()
+                gd.apply_to(focusitem, vu.cfunc.body)
+                lines = "(%s)" % " and\n".join(gd.lines)
+                print("%s\n%x:\n%s" % ("-"*80, ida_kernwin.get_screen_ea(), lines))
+
+# -----------------------------------------------------------------------
 def show_ctree_graph(create_subgraph=False):
     w = ida_kernwin.get_current_widget()
     if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
@@ -616,13 +725,23 @@ def show_ctree_graph(create_subgraph=False):
             cg.zoom_and_dock(w)
     return
 
+# -----------------------------------------------------------------------
 class hotkey_handler(ida_kernwin.action_handler_t):
     def __init__(self, create_subgraph=False):
         ida_kernwin.action_handler_t.__init__(self)
         self.create_subgraph = create_subgraph
 
     def activate(self, ctx):
-        show_ctree_graph(create_subgraph=self.create_subgraph)
+        if ctx.action == HRDevHelper.act_show_ctree:
+            show_ctree_graph()
+        elif ctx.action == HRDevHelper.act_isolate_sub_tree:
+            show_ctree_graph(create_subgraph=True)
+        elif ctx.action == HRDevHelper.act_dump_lambda:
+            dump_ctree_to_lambda()
+        elif ctx.action == HRDevHelper.act_dump_lambda_sub_tree:
+            dump_ctree_to_lambda(create_subgraph=True)
+        else:
+            ida_kernwin.warning("Not implemented")
         return 1
 
     def update(self, ctx):
@@ -633,18 +752,21 @@ class HRDevHelper(ida_idaapi.plugin_t):
     comment = ""
     help = ""
     wanted_name = PLUGIN_NAME
-    wanted_hotkey = "Ctrl-Shift-."
-    hxehook = None
+    wanted_hotkey = ""
     flags = ida_idaapi.PLUGIN_DRAW
-    actname = "%s:subgraph" % PLUGIN_NAME
+    actname = "%s:" % PLUGIN_NAME
+    act_show_ctree = actname+"show ctree"
+    act_isolate_sub_tree = actname+"isolate sub-tree"
+    act_dump_lambda = actname+"dump tree to lambda expression"
+    act_dump_lambda_sub_tree = actname+"dump sub-tree to lambda expression"
     config = None
 
-    def _register_hotkey(self):
+    def _register_hotkey(self, hotkey, desc):
         if not ida_kernwin.register_action(ida_kernwin.action_desc_t(
-            HRDevHelper.actname,
-            "%s - isolate subgraph" % PLUGIN_NAME,
-            hotkey_handler(create_subgraph=True),
-            "S",
+            "%s" % (desc),
+            "%s" % (desc),
+            hotkey_handler(),
+            "%s" % hotkey,
             None,
             -1)):
                 ida_kernwin.warning("%s: failed registering action" % PLUGIN_NAME)
@@ -659,15 +781,21 @@ class HRDevHelper(ida_idaapi.plugin_t):
                     "If fixing this config file manually doesn't help, please delete the file and re-run the plugin.\n\n"
                     "The plugin will now terminate." % (PLUGIN_NAME, get_cfg_filename())))
             else:
-                self._register_hotkey()
+                self._register_hotkey("Ctrl-Shift-.", HRDevHelper.act_show_ctree)
+                self._register_hotkey("Ctrl-.", HRDevHelper.act_isolate_sub_tree)
+                self._register_hotkey("Ctrl-Alt-L", HRDevHelper.act_dump_lambda)
+                self._register_hotkey("Ctrl-L", HRDevHelper.act_dump_lambda_sub_tree)
                 result = ida_idaapi.PLUGIN_KEEP 
         return result
 
     def run(self, arg):
-        show_ctree_graph()
+        pass
 
     def term(self):
-        ida_kernwin.unregister_action(HRDevHelper.actname)
+        ida_kernwin.unregister_action(HRDevHelper.act_show_ctree)
+        ida_kernwin.unregister_action(HRDevHelper.act_isolate_sub_tree)
+        ida_kernwin.unregister_action(HRDevHelper.act_dump_lambda)
+        ida_kernwin.unregister_action(HRDevHelper.act_dump_lambda_sub_tree)
 
 # -----------------------------------------------------------------------
 def PLUGIN_ENTRY():   
