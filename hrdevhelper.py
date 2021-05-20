@@ -359,7 +359,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             parts.append(tstr if tstr else "?")
 
         if self.debug:
-            parts.append("obj_id: %x" % expr.obj_id)
+            parts.append("obj_id: %x" % item.obj_id)
             if op is ida_hexrays.cot_var:
                 parts.append("idx: %d" % expr.v.idx)
                 lv = expr.v.getv()                        
