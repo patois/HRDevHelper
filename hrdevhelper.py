@@ -130,7 +130,7 @@ def get_obj_ids(vdui, lnnum):
 
 # -----------------------------------------------------------------------
 def get_selected_lines(vdui):
-    vdui.get_current_item(ida_hexrays.USE_KEYBOARD)
+    vdui.get_current_item(ida_hexrays.USE_MOUSE)
     line_numbers = []
     w = vdui.ct
     p0 = ida_kernwin.twinpos_t()
@@ -146,68 +146,32 @@ def get_selected_lines(vdui):
     return line_numbers
 
 # -----------------------------------------------------------------------
-class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
-    def __init__(self, cg):
-        ida_hexrays.Hexrays_Hooks.__init__(self)
-        self.cg = cg
-
-    """
-    def create_hint(self, vd):
-        if vd.get_current_item(ida_hexrays.USE_MOUSE):
-            lnnum = vd.cpos.lnnum
-            if lnnum < vd.cfunc.hdrlines:
-                return 0
-
-            lines = []
-            title = "%s:" % PLUGIN_NAME
-            sep = 30*"-"
-            indent = 2*" "
-            
-            item = vd.item.it
-            op = item.op
-            is_expr = item.is_expr()
-            item_type = ida_hexrays.get_ctype_name(op)
-            item_ea = item.ea
-            lines.append("%s" % title)
-            lines.append("%s" % (len(title)*"="))
-            if is_expr:
-                name = item.cexpr.print1(None)
-                #name = ida_lines.tag_remove(name)
-                #name = ida_pro.str2user(name)
-                lines.append("%sitem:\t%s" % (indent, name))
-            lines.append("%stype:\tc%ct_%s" % (
-                indent,
-                "o" if is_expr else "i",
-                item_type))
-            lines.append("%sea:\t%x" % (indent, item_ea))
-            lines.append("%s" % sep)
-            lines.append("")
-            
-            custom_hints = "\n".join(lines)
-            return (2, custom_hints, len(lines))
-        return 0
-    """
-    def refresh_pseudocode(self, vu):
-        # function refreshed
-        self.cg.update(cfunc=vu.cfunc, focus=None)
-        return 0
-
-    def curpos(self, vu):
-        # cursor pos changed -> highlight nodes that belong to current line
-        if self.cg and vu.get_current_item(ida_hexrays.USE_MOUSE):
-            objs = []
-            line_numbers = get_selected_lines(vu)
-            for n in line_numbers:
-                objs += get_obj_ids(vu, n)
-            focusitem = vu.item.e if vu.item.is_citem() else None
-            self.cg.update(cfunc=None, objs=objs, focus=focusitem.obj_id if focusitem else None)
-        return 0
-
-# -----------------------------------------------------------------------
 class cfunc_graph_t(ida_graph.GraphViewer):
     def __init__(self, focus, config, close_open=False, subtitle=None):
         self.title = "%s%s" % (PLUGIN_NAME, " [%s]" % subtitle if subtitle else "") 
         ida_graph.GraphViewer.__init__(self, self.title, close_open)
+
+        class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
+            def __init__(self, cg):
+                ida_hexrays.Hexrays_Hooks.__init__(self)
+                self.cg = cg
+
+            def refresh_pseudocode(self, vu):
+                # function refreshed
+                self.cg.update(cfunc=vu.cfunc, focus=None)
+                return 0
+
+            def curpos(self, vu):
+                # cursor pos changed -> highlight nodes that belong to current line
+                if self.cg and vu.get_current_item(ida_hexrays.USE_MOUSE):
+                    objs = []
+                    line_numbers = get_selected_lines(vu)
+                    for n in line_numbers:
+                        objs += get_obj_ids(vu, n)
+                    focusitem = vu.item.e if vu.item.is_citem() else None
+                    self.cg.update(cfunc=None, objs=objs, focus=focusitem.obj_id if focusitem else None)
+                return 0
+
         self.is_subgraph = subtitle is not None
 
         # apply config
@@ -359,6 +323,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             parts.append(tstr if tstr else "?")
 
         if self.debug:
+            parts.append("-"*20)
             parts.append("obj_id: %x" % item.obj_id)
             if op is ida_hexrays.cot_var:
                 parts.append("idx: %d" % expr.v.idx)
@@ -397,7 +362,9 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             elif op is ida_hexrays.cot_obj:
                     parts.append("obj_ea: %x" % expr.obj_ea)
 
-        scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
+        # disable hightlight color for now -> requires labels to be re-generated/graph to be redrawn
+        #scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
+        scolor = self.COLOR_TEXT_DEFAULT
         parts = [ida_lines.COLSTR("%s" % part, scolor) for part in parts]
         return "\n".join(parts)
 
@@ -434,7 +401,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
         if c == 'C':
             self.center_node = not self.center_node
-            ida_kernwin.msg("%s: centering graph %sabled\n" % (PLUGIN_NAME, "en" if self.center_node else "dis"))
+            ida_kernwin.msg("%s: centering %sabled\n" % (PLUGIN_NAME, "en" if self.center_node else "dis"))
         elif c == 'D':
             self.debug = (self.debug+1)%3
             ida_kernwin.msg("%s: debug %d\n" % (PLUGIN_NAME, self.debug))
@@ -547,7 +514,7 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
 
     def _add_node(self, i):
         """
-        # commented for performance reasons
+        # commented/removed for performance reasons
         for k_obj_id in self.reverse.keys():
             if i.obj_id == k_obj_id:
                 ida_kernwin.warning("bad ctree - duplicate nodes! (i.ea=%x)" % i.ea)
@@ -586,124 +553,12 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
         return self._process(e)
 
 # -----------------------------------------------------------------------
-class graph_dumper_t(ida_hexrays.ctree_parentee_t):
-    def __init__(self):
-        ida_hexrays.ctree_parentee_t.__init__(self)
-        self.lines = []
-        self.nodes = {}
-
-    def _add_node(self, obj_id, text):
-        self.nodes[obj_id] = text
-
-    def _process(self, i):
-        if len(self.parents) > 1:
-            p = self.parents.back()
-            ci = i.cexpr if i.is_expr() else i.cinsn
-            pi = p.cexpr if p.is_expr() else p.cinsn
-            elem = "<error>"
-            if pi.op is ida_hexrays.cot_call:
-                if pi.x.obj_id == ci.obj_id:
-                    elem = "x"
-                else:
-                    argc = len(pi.a)
-                    for j in range(argc):
-                        if ci.obj_id == pi.a[j].obj_id:
-                            elem = "a[%d]" % j
-                            break
-            elif pi.op is ida_hexrays.cit_expr:
-                if pi.cexpr.obj_id == ci.obj_id:
-                    elem = "cexpr"
-            elif pi.op is ida_hexrays.cit_block:
-                blockc = len(pi.cblock)
-                for j in range(blockc):
-                    if pi.cblock[j].obj_id == ci.obj_id:
-                        elem = "cblock[%d]" % j
-                        break
-            elif pi.op is ida_hexrays.cit_if:
-                if pi.cif.expr.obj_id == ci.obj_id:
-                    elem = "cif.expr"
-                elif pi.cif.ithen.obj_id == ci.obj_id:
-                    elem = "cif.ithen"
-                elif pi.cif.ielse and pi.cif.ielse.obj_id == ci.obj_id:
-                    elem = "cif.ielse"
-            elif pi.op is ida_hexrays.cit_return:
-                if pi.creturn.expr.obj_id == ci.obj_id:
-                    elem = "creturn.expr"
-            elif pi.op is ida_hexrays.cit_for:
-                if pi.cfor.expr.obj_id == ci.obj_id:
-                    elem = "cfor.expr"
-                elif pi.cfor.init.obj_id == ci.obj_id:
-                    elem = "cfor.init"
-                elif pi.cfor.step.obj_id == ci.obj_id:
-                    elem = "cfor.step"
-                elif pi.cfor.body.obj_id == ci.obj_id:
-                    elem = "cfor.body"
-            elif pi.op is ida_hexrays.cit_while:
-                if pi.cwhile.expr.obj_id == ci.obj_id:
-                    elem = "cwhile.expr"
-                elif pi.cwhile.body.obj_id == ci.obj_id:
-                    elem = "cwhile.body"
-            elif pi.op is ida_hexrays.cit_do:
-                if pi.cdo.expr.obj_id == ci.obj_id:
-                    elem = "cdo.expr"
-                elif pi.cdo.body.obj_id == ci.obj_id:
-                    elem = "cdo.body"
-            elif pi.op is ida_hexrays.cit_switch:
-                switchc = len(pi.cswitch.cases)
-                if pi.cswitch.expr.obj_id == ci.obj_id:
-                    elem = "cswitch.expr"
-                else:
-                    for j in range(switchc):
-                        if pi.cswitch.cases[j].obj_id == ci.obj_id:
-                            elem = "cswitch.cases[%d]" % j
-                            break
-            elif pi.op is ida_hexrays.cit_goto:
-                pass
-            else:
-                if ida_hexrays.op_uses_x(pi.op) and pi.x.obj_id == ci.obj_id:
-                    elem = "x"
-                elif ida_hexrays.op_uses_y(pi.op) and pi.y.obj_id == ci.obj_id:
-                    elem = "y"
-                elif ida_hexrays.op_uses_z(pi.op) and pi.z.obj_id == ci.obj_id:
-                    elem = "z"
-            elem_text = "%s.%s" % (self.nodes[pi.obj_id], elem)
-            self._add_node(ci.obj_id if i.is_expr() else ci.obj_id, elem_text)
-            self.lines.append("%s.op is idaapi.c%ct_%s" % (elem_text, "o" if i.is_expr() else "i", ida_hexrays.get_ctype_name(ci.op)))
-        else:
-            isexpr = i.is_expr()
-            self.lines.append("i.op is idaapi.c%ct_%s" % ("o" if isexpr else "i", ida_hexrays.get_ctype_name(i.cexpr.op if isexpr else i.cinsn.op)))
-            self._add_node(i.cexpr.obj_id if isexpr else i.cinsn.obj_id, "i")
-        return 0
-
-    def visit_insn(self, i):
-        return self._process(i)
-
-    def visit_expr(self, e):
-        return self._process(e)
-
-# -----------------------------------------------------------------------
-def dump_ctree_to_lambda(create_subgraph=False):
-    w = ida_kernwin.get_current_widget()
-    if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
-        vu = ida_hexrays.get_widget_vdui(w)
-        if vu:
-            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
-            focusitem = vu.cfunc.body
-            if create_subgraph:
-                focusitem = vu.item.e if vu.item.is_citem() else None
-            if focusitem:
-                gd = graph_dumper_t()
-                gd.apply_to(focusitem, vu.cfunc.body)
-                lines = "(%s)" % " and\n".join(gd.lines)
-                print("%s\n%x:\n%s" % ("-"*80, ida_kernwin.get_screen_ea(), lines))
-
-# -----------------------------------------------------------------------
 def show_ctree_graph(create_subgraph=False):
     w = ida_kernwin.get_current_widget()
     if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
         vu = ida_hexrays.get_widget_vdui(w)
         if vu:
-            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
+            vu.get_current_item(ida_hexrays.USE_MOUSE)
             focusitem = vu.item.e if vu.item.is_citem() else None
             sub = None
             if create_subgraph:
@@ -726,26 +581,300 @@ def show_ctree_graph(create_subgraph=False):
     return
 
 # -----------------------------------------------------------------------
-class hotkey_handler(ida_kernwin.action_handler_t):
-    def __init__(self, create_subgraph=False):
+class graph_dumper_t(ida_hexrays.ctree_parentee_t):
+    def __init__(self):
+        ida_hexrays.ctree_parentee_t.__init__(self)
+        self.lines = []
+        self.nodes = {}
+
+    def _add_node(self,i):
+        ci = i.cexpr if i.is_expr() else i.cinsn
+        p = self.parents.back()
+        pi = p.cexpr if p.is_expr() else p.cinsn
+        pi_op = pi.op
+        ci_obj_id = ci.obj_id
+        label = "<error>"
+        if len(self.parents) > 1:
+            elem = "<error>"
+            if pi_op is ida_hexrays.cot_call:
+                if pi.x.obj_id == ci_obj_id:
+                    elem = "x"
+                else:
+                    argc = len(pi.a)
+                    for j in range(argc):
+                        if ci_obj_id == pi.a[j].obj_id:
+                            elem = "a[%d]" % j
+                            break
+            elif pi_op is ida_hexrays.cit_expr:
+                if pi.cexpr.obj_id == ci_obj_id:
+                    elem = "cexpr"
+            elif pi_op is ida_hexrays.cit_block:
+                blockc = len(pi.cblock)
+                for j in range(blockc):
+                    if pi.cblock[j].obj_id == ci_obj_id:
+                        elem = "cblock[%d]" % j
+                        break
+            elif pi_op is ida_hexrays.cit_if:
+                if pi.cif.expr.obj_id == ci_obj_id:
+                    elem = "cif.expr"
+                elif pi.cif.ithen.obj_id == ci_obj_id:
+                    elem = "cif.ithen"
+                elif pi.cif.ielse and pi.cif.ielse.obj_id == ci_obj_id:
+                    elem = "cif.ielse"
+            elif pi_op is ida_hexrays.cit_return:
+                if pi.creturn.expr.obj_id == ci_obj_id:
+                    elem = "creturn.expr"
+            elif pi_op is ida_hexrays.cit_for:
+                if pi.cfor.expr.obj_id == ci_obj_id:
+                    elem = "cfor.expr"
+                elif pi.cfor.init.obj_id == ci_obj_id:
+                    elem = "cfor.init"
+                elif pi.cfor.step.obj_id == ci_obj_id:
+                    elem = "cfor.step"
+                elif pi.cfor.body.obj_id == ci_obj_id:
+                    elem = "cfor.body"
+            elif pi_op is ida_hexrays.cit_while:
+                if pi.cwhile.expr.obj_id == ci_obj_id:
+                    elem = "cwhile.expr"
+                elif pi.cwhile.body.obj_id == ci_obj_id:
+                    elem = "cwhile.body"
+            elif pi_op is ida_hexrays.cit_do:
+                if pi.cdo.expr.obj_id == ci_obj_id:
+                    elem = "cdo.expr"
+                elif pi.cdo.body.obj_id == ci_obj_id:
+                    elem = "cdo.body"
+            elif pi_op is ida_hexrays.cit_switch:
+                switchc = len(pi.cswitch.cases)
+                if pi.cswitch.expr.obj_id == ci_obj_id:
+                    elem = "cswitch.expr"
+                else:
+                    for j in range(switchc):
+                        if pi.cswitch.cases[j].obj_id == ci_obj_id:
+                            elem = "cswitch.cases[%d]" % j
+                            break
+            elif pi_op is ida_hexrays.cit_goto:
+                pass
+            else:
+                if ida_hexrays.op_uses_x(pi_op) and pi.x.obj_id == ci_obj_id:
+                    elem = "x"
+                elif ida_hexrays.op_uses_y(pi_op) and pi.y.obj_id == ci_obj_id:
+                    elem = "y"
+                elif ida_hexrays.op_uses_z(pi_op) and pi.z.obj_id == ci_obj_id:
+                    elem = "z"
+            label = "%s.%s" % (self.nodes[pi.obj_id], elem)
+        else:
+            label = "i"
+        self.nodes[ci_obj_id] = label
+        return (ci_obj_id, label)
+
+    def _append_lambda_expression(self, i, label, include_data=False):
+        def to_mask(n):
+            mask = 0
+            for i in range(n):
+                mask |= 0xff << 8*i
+            return mask
+        ci = i.cexpr if i.is_expr() else i.cinsn
+        expr1 = "%s.op is idaapi.c%ct_%s" % (label, "o" if i.is_expr() else "i", ida_hexrays.get_ctype_name(ci.op))
+        expr2 = None
+        if include_data:
+            if i.op is ida_hexrays.cot_num: #in [ida_hexrays.cot_num, ida_hexrays.cot_helper, ida_hexrays.cot_str]:
+                #expr2 = "%s.numval() == %s" % (label, get_expr_name(i))
+                #print("%x %d" % (i.ea, ord(i.n.nf.org_nbytes)))
+                expr2 = "%s.numval() == 0x%x" % (label, i.numval() & to_mask(ord(i.n.nf.org_nbytes)))
+        self.lines.append(expr1)
+        if expr2:
+            self.lines.append(expr2)
+        return
+
+    def _process(self, i):
+        _, label = self._add_node(i)
+        self._append_lambda_expression(i, label, include_data=False)
+        return 0
+
+    def visit_insn(self, i):
+        return self._process(i)
+
+    def visit_expr(self, e):
+        return self._process(e)
+
+# -----------------------------------------------------------------------
+def dump_ctree_to_lambda(create_subgraph=False):
+    w = ida_kernwin.get_current_widget()
+    if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
+        vu = ida_hexrays.get_widget_vdui(w)
+        if vu:
+            vu.get_current_item(ida_hexrays.USE_MOUSE)
+            focusitem = vu.cfunc.body
+            if create_subgraph:
+                focusitem = vu.item.e if vu.item.is_citem() else None
+            if focusitem:
+                gd = graph_dumper_t()
+                gd.apply_to(focusitem, vu.cfunc.body)
+                lines = "(%s)" % " and\n".join(gd.lines)
+                print("%s\n%x:\n%s" % ("-"*80, ida_kernwin.get_screen_ea(), lines))
+
+# -----------------------------------------------------------------------
+class context_viewer_t(ida_kernwin.Form):
+    INSTANCE = None
+
+    def __init__(self):
+        F = ida_kernwin.Form
+        form = r"""STARTITEM {id:mstr_pexp}
+BUTTON YES NONE
+BUTTON NO NONE
+BUTTON CANCEL NONE
+%s - Context View
+
+{FormChangeCb}
+item:  {lbl_exp}
+type:  {lbl_type}
+addr:  {lbl_ea}
+obj_id:{lbl_objid}
+
+<##Python expression:{mstr_pexp}>
+
+address:{lbl_sea}""" % PLUGIN_NAME
+        t = ida_kernwin.textctrl_info_t()
+        controls = {
+            "lbl_exp": F.StringLabel(""),
+            "lbl_type": F.StringLabel(""),
+            "lbl_ea": F.StringLabel(""),
+            "lbl_objid": F.StringLabel(""),
+            "lbl_sea": F.StringLabel(""),
+            "mstr_pexp": F.MultiLineTextControl(
+                text="",
+                flags=t.TXTF_FIXEDFONT | t.TXTF_READONLY,
+                tabsize=2, width=500, swidth=128),
+            'FormChangeCb': F.FormChangeCb(self.OnFormChange),}
+        self.hooks = None
+        F.__init__(self, form, controls)
+
+    def OnFormChange(self, fid):
+        if fid == -1: # init form
+            # install vd hook
+            self.OnFormInit()
+        elif fid == -5: # close form? (undocumented?)
+            # uninstall vd hook
+            self.OnFormClose()
+        return 1
+
+    def OnFormInit(self):
+        class vd_hooks_t(ida_hexrays.Hexrays_Hooks):
+            def __init__(self, ev):
+                ida_hexrays.Hexrays_Hooks.__init__(self)
+                self.ev = ev
+            def refresh_pseudocode(self, vu):
+                # function refreshed
+                self.ev._update(vu)
+                return 0
+            def curpos(self, vu):
+                self.ev._update(vu)
+                return 0
+        if not self.hooks:
+            self.hooks = vd_hooks_t(self)
+            self.hooks.hook()
+        return
+
+    def OnFormClose(self):
+        if self.hooks:
+            self.hooks.unhook()
+            self.hooks = None
+        return
+
+    def _update(self, vu):
+        if vu:
+            focus = None
+            if vu.get_current_item(ida_hexrays.USE_MOUSE):
+                focus = vu.item.e if vu.item.is_citem() else None
+            _ea = _exp = _type = _objid = "???"
+            if vu.get_current_item(ida_hexrays.USE_MOUSE):
+                item = vu.item.it
+                isexpr = item.is_expr()
+                item_type = ida_hexrays.get_ctype_name(item.op)
+                if isexpr:
+                    _exp = item.cexpr.print1(None)
+                    _exp = ida_lines.tag_remove(_exp)
+                _ea = "%x" % item.ea
+                _type = "c%ct_%s" % ("o" if isexpr else "i", item_type)
+                _objid = "%x" % item.obj_id
+            self.SetControlValue(self.lbl_ea, _ea)
+            self.SetControlValue(self.lbl_exp, _exp)
+            self.SetControlValue(self.lbl_type, _type)
+            self.SetControlValue(self.lbl_objid, _objid)
+            gd = graph_dumper_t()
+            gd.apply_to(vu.cfunc.body if not focus else focus, vu.cfunc.body)
+            expr = "(%s)" % " and\n".join(gd.lines)
+            tc = self.GetControlValue(self.mstr_pexp)
+            tc.text = expr
+            self.SetControlValue(self.mstr_pexp, tc)
+            self.SetControlValue(self.lbl_sea, "%x" % ida_kernwin.get_screen_ea())
+        return
+
+    @staticmethod
+    def open():
+        if context_viewer_t.INSTANCE is None:
+            form = context_viewer_t()
+            form.modal = False
+            f, _ = form.Compile()
+            context_viewer_t.INSTANCE = f
+        return context_viewer_t.INSTANCE.Open()
+
+# -----------------------------------------------------------------------
+class hotkey_handler_t(ida_kernwin.action_handler_t):
+    def __init__(self):
         ida_kernwin.action_handler_t.__init__(self)
-        self.create_subgraph = create_subgraph
 
     def activate(self, ctx):
-        if ctx.action == HRDevHelper.act_show_ctree:
+        if ctx.action == HRDevHelper.get_action_name(HRDevHelper.act_show_ctree):
             show_ctree_graph()
-        elif ctx.action == HRDevHelper.act_isolate_sub_tree:
+        elif ctx.action == HRDevHelper.get_action_name(HRDevHelper.act_show_sub_tree):
             show_ctree_graph(create_subgraph=True)
-        elif ctx.action == HRDevHelper.act_dump_lambda:
-            dump_ctree_to_lambda()
-        elif ctx.action == HRDevHelper.act_dump_lambda_sub_tree:
-            dump_ctree_to_lambda(create_subgraph=True)
+        elif ctx.action == HRDevHelper.get_action_name(HRDevHelper.act_show_context):
+            context_viewer_t.open()
         else:
             ida_kernwin.warning("Not implemented")
         return 1
 
     def update(self, ctx):
         return ida_kernwin.AST_ENABLE_FOR_WIDGET if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE else ida_kernwin.AST_DISABLE_FOR_WIDGET
+
+# ----------------------------------------------------------------------------
+class ui_event_handler_t(ida_kernwin.UI_Hooks):
+    def __init__(self, actions):
+        ida_kernwin.UI_Hooks.__init__(self)
+        self.actions = actions
+ 
+    def finish_populating_widget_popup(self, widget, popup_handle):       
+        if ida_kernwin.get_widget_type(widget) == ida_kernwin.BWN_PSEUDOCODE:
+            class menu_handler_t(ida_kernwin.action_handler_t):
+                def __init__(self, name):
+                    ida_kernwin.action_handler_t.__init__(self)
+                    self.name = name
+
+                def activate(self, ctx):
+                    if self.name == HRDevHelper.get_action_name(HRDevHelper.act_show_ctree):
+                        show_ctree_graph()
+                    elif self.name == HRDevHelper.get_action_name(HRDevHelper.act_show_sub_tree):
+                        show_ctree_graph(create_subgraph=True)
+                    elif self.name == HRDevHelper.get_action_name(HRDevHelper.act_show_context):
+                        context_viewer_t.open()
+                    else:
+                        ida_kernwin.warning("Not implemented")                    
+                    return 1
+
+                def update(self, ctx):
+                    return ida_kernwin.AST_ENABLE_FOR_WIDGET
+
+            for actname, data in self.actions.items():
+                desc, hotkey = data
+                action_desc = ida_kernwin.action_desc_t(
+                    actname,
+                    desc,
+                    menu_handler_t(actname),
+                    hotkey,
+                    None,
+                    -1)
+                ida_kernwin.attach_dynamic_action_to_popup(widget, popup_handle, action_desc, "%s/" % PLUGIN_NAME)
 
 # -----------------------------------------------------------------------
 class HRDevHelper(ida_idaapi.plugin_t):
@@ -754,24 +883,43 @@ class HRDevHelper(ida_idaapi.plugin_t):
     wanted_name = PLUGIN_NAME
     wanted_hotkey = ""
     flags = ida_idaapi.PLUGIN_DRAW
-    actname = "%s:" % PLUGIN_NAME
-    act_show_ctree = actname+"show ctree"
-    act_isolate_sub_tree = actname+"isolate sub-tree"
-    act_dump_lambda = actname+"dump tree to lambda expression"
-    act_dump_lambda_sub_tree = actname+"dump sub-tree to lambda expression"
+    act_show_ctree = "show ctree"
+    act_show_sub_tree = "show sub-tree"
+    act_show_context = "show context"
     config = None
 
-    def _register_hotkey(self, hotkey, desc):
-        if not ida_kernwin.register_action(ida_kernwin.action_desc_t(
-            "%s" % (desc),
-            "%s" % (desc),
-            hotkey_handler(),
-            "%s" % hotkey,
+    @staticmethod
+    def get_action_name(desc):
+        return "%s:%s" % (PLUGIN_NAME, desc)
+
+    def _register_action(self, hotkey, desc):
+        actname = HRDevHelper.get_action_name(desc)
+        print(actname)
+        if ida_kernwin.register_action(ida_kernwin.action_desc_t(
+            actname,
+            desc,
+            hotkey_handler_t(),
+            hotkey,
             None,
             -1)):
-                ida_kernwin.warning("%s: failed registering action" % PLUGIN_NAME)
+            self._registered_actions[actname] = (desc, hotkey)
+        else:
+            ida_kernwin.warning("%s: failed registering action" % PLUGIN_NAME)
+
+    def _install(self):
+        self._register_action("Ctrl-Shift-.", HRDevHelper.act_show_ctree)
+        self._register_action("Ctrl-.", HRDevHelper.act_show_sub_tree)
+        self._register_action("V", HRDevHelper.act_show_context)
+        self.ui_hooks = ui_event_handler_t(self._registered_actions)
+        self.ui_hooks.hook()
+
+    def _uninstall(self):
+        self.ui_hooks.unhook()
+        for desc in self._registered_actions:
+            ida_kernwin.unregister_action(desc)
 
     def init(self):
+        self._registered_actions = {}
         result = ida_idaapi.PLUGIN_SKIP
         if ida_hexrays.init_hexrays_plugin():
             try:
@@ -781,10 +929,7 @@ class HRDevHelper(ida_idaapi.plugin_t):
                     "If fixing this config file manually doesn't help, please delete the file and re-run the plugin.\n\n"
                     "The plugin will now terminate." % (PLUGIN_NAME, get_cfg_filename())))
             else:
-                self._register_hotkey("Ctrl-Shift-.", HRDevHelper.act_show_ctree)
-                self._register_hotkey("Ctrl-.", HRDevHelper.act_isolate_sub_tree)
-                self._register_hotkey("Ctrl-Alt-L", HRDevHelper.act_dump_lambda)
-                self._register_hotkey("Ctrl-L", HRDevHelper.act_dump_lambda_sub_tree)
+                self._install()
                 result = ida_idaapi.PLUGIN_KEEP 
         return result
 
@@ -792,10 +937,7 @@ class HRDevHelper(ida_idaapi.plugin_t):
         pass
 
     def term(self):
-        ida_kernwin.unregister_action(HRDevHelper.act_show_ctree)
-        ida_kernwin.unregister_action(HRDevHelper.act_isolate_sub_tree)
-        ida_kernwin.unregister_action(HRDevHelper.act_dump_lambda)
-        ida_kernwin.unregister_action(HRDevHelper.act_dump_lambda_sub_tree)
+        self._uninstall()
 
 # -----------------------------------------------------------------------
 def PLUGIN_ENTRY():   
