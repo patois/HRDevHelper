@@ -172,8 +172,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                     self.cg.update(cfunc=None, objs=objs, focus=focusitem.obj_id if focusitem else None)
                 return 0
 
-        self.is_subgraph = subtitle is not None
-
         # apply config
         #  - options
         self.config = config
@@ -249,7 +247,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
     def update(self, cfunc=None, objs=None, focus=None):
         if cfunc:
             gb = graph_builder_t(self, cfunc)
-            gb.apply_to(cfunc.body, None)
+            gb.apply_to(cfunc.body, cfunc.body)
             self.redraw = True
         self._set_focus(focus)
         self._set_objs(objs)
@@ -513,13 +511,6 @@ class graph_builder_t(ida_hexrays.ctree_parentee_t):
             ida_kernwin.show_wait_box("%s: building graph" % PLUGIN_NAME)
 
     def _add_node(self, i):
-        """
-        # commented/removed for performance reasons
-        for k_obj_id in self.reverse.keys():
-            if i.obj_id == k_obj_id:
-                ida_kernwin.warning("bad ctree - duplicate nodes! (i.ea=%x)" % i.ea)
-                return -1
-        """
         n = self.cg.add_node()
         if n <= len(self.cg.items):
             self.cg.items.append(i)
@@ -677,6 +668,7 @@ class graph_dumper_t(ida_hexrays.ctree_parentee_t):
         expr1 = "%s.op is idaapi.c%ct_%s" % (label, "o" if i.is_expr() else "i", ida_hexrays.get_ctype_name(ci.op))
         expr2 = None
         if include_data:
+            # TODO
             if i.op is ida_hexrays.cot_num: #in [ida_hexrays.cot_num, ida_hexrays.cot_helper, ida_hexrays.cot_str]:
                 #expr2 = "%s.numval() == %s" % (label, get_expr_name(i))
                 #print("%x %d" % (i.ea, ord(i.n.nf.org_nbytes)))
@@ -726,10 +718,10 @@ BUTTON CANCEL NONE
 %s - Context View
 
 {FormChangeCb}
-item:  {lbl_exp}
-type:  {lbl_type}
-addr:  {lbl_ea}
-obj_id:{lbl_objid}
+item:   {lbl_exp}
+.op:    {lbl_op}
+.ea:    {lbl_ea}
+.obj_id:{lbl_objid}
 
 <##Python expression:{mstr_pexp}>
 
@@ -737,7 +729,7 @@ address:{lbl_sea}""" % PLUGIN_NAME
         t = ida_kernwin.textctrl_info_t()
         controls = {
             "lbl_exp": F.StringLabel(""),
-            "lbl_type": F.StringLabel(""),
+            "lbl_op": F.StringLabel(""),
             "lbl_ea": F.StringLabel(""),
             "lbl_objid": F.StringLabel(""),
             "lbl_sea": F.StringLabel(""),
@@ -745,7 +737,7 @@ address:{lbl_sea}""" % PLUGIN_NAME
                 text="",
                 flags=t.TXTF_FIXEDFONT | t.TXTF_READONLY,
                 tabsize=2, width=500, swidth=128),
-            'FormChangeCb': F.FormChangeCb(self.OnFormChange),}
+            'FormChangeCb': F.FormChangeCb(self.OnFormChange)}
         self.hooks = None
         F.__init__(self, form, controls)
 
@@ -799,7 +791,7 @@ address:{lbl_sea}""" % PLUGIN_NAME
                 _objid = "%x" % item.obj_id
             self.SetControlValue(self.lbl_ea, _ea)
             self.SetControlValue(self.lbl_exp, _exp)
-            self.SetControlValue(self.lbl_type, _type)
+            self.SetControlValue(self.lbl_op, _type)
             self.SetControlValue(self.lbl_objid, _objid)
             gd = graph_dumper_t()
             gd.apply_to(vu.cfunc.body if not focus else focus, vu.cfunc.body)
@@ -882,7 +874,7 @@ class HRDevHelper(ida_idaapi.plugin_t):
     help = ""
     wanted_name = PLUGIN_NAME
     wanted_hotkey = ""
-    flags = ida_idaapi.PLUGIN_DRAW
+    flags = ida_idaapi.PLUGIN_DRAW | ida_idaapi.PLUGIN_HIDE
     act_show_ctree = "show ctree"
     act_show_sub_tree = "show sub-tree"
     act_show_context = "show context"
