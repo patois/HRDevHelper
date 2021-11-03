@@ -549,11 +549,12 @@ def show_ctree_graph(create_subgraph=False):
     if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
         vu = ida_hexrays.get_widget_vdui(w)
         if vu:
-            vu.get_current_item(ida_hexrays.USE_MOUSE)
+            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
             focusitem = vu.item.e if vu.item.is_citem() else None
             sub = None
             if create_subgraph:
                 if not focusitem:
+                    ida_kernwin.msg("%s: cursor must be placed on a citem!\n" % PLUGIN_NAME)
                     return
                 sub = "subgraph %x" % focusitem.obj_id
             # create graphviewer
@@ -703,7 +704,7 @@ def dump_ctree_to_lambda(create_subgraph=False):
                 gd = graph_dumper_t()
                 gd.apply_to(focusitem, vu.cfunc.body)
                 lines = "(%s)" % " and\n".join(gd.lines)
-                print("%s\n%x:\n%s" % ("-"*80, ida_kernwin.get_screen_ea(), lines))
+                ida_kernwin.msg("%s\n%x:\n%s" % ("-"*80, ida_kernwin.get_screen_ea(), lines))
 
 # -----------------------------------------------------------------------
 class context_viewer_t(ida_kernwin.Form):
@@ -765,6 +766,12 @@ address:{lbl_sea}""" % PLUGIN_NAME
         if not self.hooks:
             self.hooks = vd_hooks_t(self)
             self.hooks.hook()
+
+        w = ida_kernwin.get_current_widget()
+        if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
+            vu = ida_hexrays.get_widget_vdui(w)
+            if vu:
+                self._update(vu)
         return
 
     def OnFormClose(self):
