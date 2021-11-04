@@ -130,7 +130,7 @@ def get_obj_ids(vdui, lnnum):
 
 # -----------------------------------------------------------------------
 def get_selected_lines(vdui):
-    vdui.get_current_item(ida_hexrays.USE_MOUSE)
+    vdui.get_current_item(ida_hexrays.USE_KEYBOARD)
     line_numbers = []
     w = vdui.ct
     p0 = ida_kernwin.twinpos_t()
@@ -163,7 +163,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
             def curpos(self, vu):
                 # cursor pos changed -> highlight nodes that belong to current line
-                if self.cg and vu.get_current_item(ida_hexrays.USE_MOUSE):
+                if self.cg and vu.get_current_item(ida_hexrays.USE_KEYBOARD):
                     objs = []
                     line_numbers = get_selected_lines(vu)
                     for n in line_numbers:
@@ -696,7 +696,7 @@ def dump_ctree_to_lambda(create_subgraph=False):
     if ida_kernwin.get_widget_type(w) == ida_kernwin.BWN_PSEUDOCODE:
         vu = ida_hexrays.get_widget_vdui(w)
         if vu:
-            vu.get_current_item(ida_hexrays.USE_MOUSE)
+            vu.get_current_item(ida_hexrays.USE_KEYBOARD)
             focusitem = vu.cfunc.body
             if create_subgraph:
                 focusitem = vu.item.e if vu.item.is_citem() else None
@@ -783,10 +783,10 @@ address:{lbl_sea}""" % PLUGIN_NAME
     def _update(self, vu):
         if vu:
             focus = None
-            if vu.get_current_item(ida_hexrays.USE_MOUSE):
+            if vu.get_current_item(ida_hexrays.USE_KEYBOARD):
                 focus = vu.item.e if vu.item.is_citem() else None
             _ea = _exp = _type = _objid = "???"
-            if vu.get_current_item(ida_hexrays.USE_MOUSE):
+            if vu.get_current_item(ida_hexrays.USE_KEYBOARD):
                 item = vu.item.it
                 isexpr = item.is_expr()
                 item_type = ida_hexrays.get_ctype_name(item.op)
@@ -906,8 +906,8 @@ class HRDevHelper(ida_idaapi.plugin_t):
             ida_kernwin.warning("%s: failed registering action" % PLUGIN_NAME)
 
     def _install(self):
-        self._register_action("Ctrl-Shift-.", HRDevHelper.act_show_ctree)
-        self._register_action("Ctrl-.", HRDevHelper.act_show_sub_tree)
+        self._register_action("Ctrl-.", HRDevHelper.act_show_ctree)
+        self._register_action("Ctrl-Shift-.", HRDevHelper.act_show_sub_tree)
         self._register_action("V", HRDevHelper.act_show_context)
         self.ui_hooks = ui_event_handler_t(self._registered_actions)
         self.ui_hooks.hook()
