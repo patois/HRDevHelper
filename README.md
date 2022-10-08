@@ -10,7 +10,7 @@ The plugin's default colors are optimized to work with dark IDA color themes. De
 editing the plugin's configuration file that is created after running the plugin for the first time. The HRDevhelper.cfg configuration file can be found in the [IDA user directory](https://hex-rays.com/blog/igors-tip-of-the-week-33-idas-user-directory-idausr/).
 
 ## Installation
-Copy hrdevhelper.py to ./IDA/plugins/ and restart IDA.
+Copy hrdevhelper.py and the hrdh folder to ./IDA/plugins/ and restart IDA.
 
 ## Plugin Usage & Shortcuts
 The plugin's functionality is accessible via right-click in a decompiler view or otherwise via keyboard shortcuts:
