@@ -61,4 +61,4 @@ class ui_event_handler_t(ida_kernwin.UI_Hooks):
                     hotkey,
                     None,
                     -1)
-                ida_kernwin.attach_dynamic_action_to_popup(widget, popup_handle, action_desc, "%s/" % cfg.PLUGIN_NAME)
+                ida_kernwin.attach_dynamic_action_to_popup(widget, popup_handle, action_desc, "%s/" % PLUGIN_NAME)
