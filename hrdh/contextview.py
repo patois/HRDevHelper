@@ -81,6 +81,7 @@ address:{lbl_sea}""" % PLUGIN_NAME
         if vu:
             focus = None
             _ea = _exp = _type = _objid = "???"
+            expr = ""
             if vu.get_current_item(ida_hexrays.USE_KEYBOARD) and vu.item.is_citem():
                 focus = vu.item.e if vu.item.is_citem() else None
                 item = vu.item.it
@@ -92,13 +93,15 @@ address:{lbl_sea}""" % PLUGIN_NAME
                 _ea = "%x" % item.ea
                 _type = "c%ct_%s" % ("o" if isexpr else "i", item_type)
                 _objid = "%x" % item.obj_id
+
+                gd = graph_dumper_t()
+                gd.apply_to(vu.cfunc.body if not focus else focus, vu.cfunc.body)
+                expr = "(%s)" % " and\n".join(gd.lines)
+
             self.SetControlValue(self.lbl_ea, _ea)
             self.SetControlValue(self.lbl_exp, _exp)
             self.SetControlValue(self.lbl_op, _type)
             self.SetControlValue(self.lbl_objid, _objid)
-            gd = graph_dumper_t()
-            gd.apply_to(vu.cfunc.body if not focus else focus, vu.cfunc.body)
-            expr = "(%s)" % " and\n".join(gd.lines)
             tc = self.GetControlValue(self.mstr_pexp)
             tc.text = expr
             self.SetControlValue(self.mstr_pexp, tc)
