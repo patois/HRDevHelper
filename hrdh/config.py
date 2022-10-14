@@ -54,8 +54,10 @@ def get_default_cfg():
 def create_cfg_file():
     result = True
     config = get_default_cfg()
+    config_path = get_cfg_filename()
     try:
-        with open(get_cfg_filename(), "w") as cfg_file:
+        os.makedirs(os.path.dirname(config_path))
+        with open(config_path, "w") as cfg_file:
             config.write(cfg_file)
     except:
         result = False

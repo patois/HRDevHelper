@@ -81,7 +81,7 @@ address:{lbl_sea}""" % PLUGIN_NAME
         if vu:
             focus = None
             _ea = _exp = _type = _objid = "???"
-            if vu.get_current_item(ida_hexrays.USE_KEYBOARD):
+            if vu.get_current_item(ida_hexrays.USE_KEYBOARD) and vu.item.is_citem():
                 focus = vu.item.e if vu.item.is_citem() else None
                 item = vu.item.it
                 isexpr = item.is_expr()
