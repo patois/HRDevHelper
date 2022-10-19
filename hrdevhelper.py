@@ -28,7 +28,7 @@ class HRDevHelper(ida_idaapi.plugin_t):
 
     def _register_action(self, hotkey, desc):
         actname = HRDevHelper.get_action_name(desc)
-        print(actname)
+        ida_kernwin.msg("%s -> %s" % (hotkey, actname))
         if ida_kernwin.register_action(ida_kernwin.action_desc_t(
             actname,
             desc,

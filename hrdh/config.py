@@ -34,15 +34,19 @@ def get_default_cfg():
         "show_context":CFG_DEFAULT_HOTKEY_SHOW_CONTEXT
     }
     config["frame_palette"] = {
-        "default":"000000",
-        "focus":"32ade1",
-        "highlight":"ffae1b"
+        "default":"073763",
+        "focus":"cc0000",
+        "highlight":"f1c232"
     }
     config["node_palette"] = {
-        "loop":"663333",
-        "call":"202050",
-        "cit":"000000",
-        "cot":"222222"   
+        "loop":"b6d7a8",
+        "call":"b4a7d6",
+        "cit":"9fc5e8",
+        "cot":"eeeeee",
+        ";loop":"663333",
+        ";call":"202050",
+        ";cit":"000000",
+        ";cot":"222222"
     }
     config["text_palette"] = {
         "default":"SCOLOR_DEFAULT",
@@ -56,7 +60,7 @@ def create_cfg_file():
     config = get_default_cfg()
     config_path = get_cfg_filename()
     try:
-        os.makedirs(os.path.dirname(config_path))
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
         with open(config_path, "w") as cfg_file:
             config.write(cfg_file)
     except:
