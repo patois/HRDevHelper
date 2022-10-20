@@ -6,7 +6,7 @@ HRDevHelper is an extension for the Hexrays decompiler written in IDAPython and 
 
 When invoked, HRDevHelper creates and attaches a ctree graph to the currently active decompiler widget and centers the graph's view on the current ctree item. Subsequently navigating the decompiled code visually highlights corresponding ctree items in the graph.  
 
-The plugin's default colors are optimized to work with dark IDA color themes. Default colors and other settings (zoom, dock position etc.) can be configured by
+The plugin's default colors and other settings (zoom, dock position etc.) can be configured by
 editing the plugin's configuration file that is created after running the plugin for the first time. The HRDevhelper.cfg configuration file can be found in the [IDA user directory](https://hex-rays.com/blog/igors-tip-of-the-week-33-idas-user-directory-idausr/).
 
 ## Installation
