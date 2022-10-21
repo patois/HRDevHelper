@@ -34,9 +34,10 @@ class ui_event_handler_t(ida_kernwin.UI_Hooks):
     def finish_populating_widget_popup(self, widget, popup_handle):       
         if ida_kernwin.get_widget_type(widget) == ida_kernwin.BWN_PSEUDOCODE:
             class menu_handler_t(ida_kernwin.action_handler_t):
-                def __init__(self, name):
+                def __init__(self, name, config):
                     ida_kernwin.action_handler_t.__init__(self)
                     self.name = name
+                    self.config = config
 
                 def activate(self, ctx):
                     if self.name == HRDevHelper.get_action_name(HRDevHelper.act_show_ctree):
@@ -57,7 +58,7 @@ class ui_event_handler_t(ida_kernwin.UI_Hooks):
                 action_desc = ida_kernwin.action_desc_t(
                     actname,
                     desc,
-                    menu_handler_t(actname),
+                    menu_handler_t(actname, self.config),
                     hotkey,
                     None,
                     -1)
