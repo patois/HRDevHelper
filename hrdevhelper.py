@@ -17,9 +17,9 @@ class HRDevHelper(ida_idaapi.plugin_t):
     flags = ida_idaapi.PLUGIN_DRAW
     if not cfg.DEBUG:
         flags |= ida_idaapi.PLUGIN_HIDE
-    act_show_ctree = "show ctree"
-    act_show_sub_tree = "show sub-tree"
-    act_show_context = "show context"
+    act_show_ctree = "Show ctree"
+    act_show_sub_tree = "Show sub-tree"
+    act_show_context = "Show context"
     config = None
 
     @staticmethod
