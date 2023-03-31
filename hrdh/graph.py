@@ -1,4 +1,3 @@
-import sys
 import ida_graph
 import ida_hexrays
 import ida_kernwin
@@ -109,6 +108,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 ida_kernwin.get_widget_title(target),
                 self.dock_position)
             self.Refresh()
+            self.center_on_node()
 
     def update(self, cfunc=None, objs=None, focus=None):
         if cfunc:
@@ -118,6 +118,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         self._set_focus(focus)
         self._set_objs(objs)
         self.Refresh()
+        self.center_on_node()
         return
 
     def _set_focus(self, focus):
@@ -166,7 +167,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 ida_hexrays.cot_var]:
             name = self._get_expr_name(expr)
             parts.append("%s.%d %s" % (type_name, expr.refwidth, name))
-
             if op == ida_hexrays.cot_obj:
                 parts.append("obj_ea: %x" % item.obj_ea)
         elif op in [
@@ -226,8 +226,6 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                         parts.append("in_asm: %r" % lv.in_asm())
                         parts.append("notarg: %r" % lv.is_notarg())
                         parts.append("decl_unused: %r" % lv.is_decl_unused())
-            elif op is ida_hexrays.cot_obj:
-                    parts.append("obj_ea: %x" % expr.obj_ea)
 
         # disable hightlight color for now -> requires labels to be re-generated/graph to be redrawn
         #scolor = self.COLOR_TEXT_HIGHLIGHT if highlight_node else self.COLOR_TEXT_DEFAULT
@@ -263,6 +261,13 @@ class cfunc_graph_t(ida_graph.GraphViewer):
 
         return (focus_node, highlight_node, color)
 
+    def center_on_node(self):
+        if self.center_node:
+            # center graph on node id 0 by default unless self.focus_node_id is set
+            nid = self.focus_node_id if self.focus_node_id else 0
+            widget = ida_kernwin.find_widget(self._title)
+            ida_graph.viewer_center_on(widget, nid)
+
     def OnViewKeydown(self, key, state):
         c = chr(key & 0xFF)
 
@@ -274,6 +279,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             ida_kernwin.msg("%s: debug %d\n" % (PLUGIN_NAME, self.debug))
             self.redraw = True
             self.Refresh()
+            self.center_on_node()
         return True
 
     def OnClose(self):
@@ -284,7 +290,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
         """
         @return: Returning True tells the graph viewer to use the items. Otherwise old items will be used.
         """
-        focus_node_id = None
+        self.focus_node_id = None
         if self.redraw:
             self.nodes = {}
             self.Clear()
@@ -308,7 +314,7 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 self.nodes[item.obj_id] = nid
 
                 if focus_node:
-                    focus_node_id = nid
+                    self.focus_node_id = nid
 
             # edges
             for n in range(len(self.items)):
@@ -318,12 +324,8 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                     t = self._succ(n, i)
                     self.AddEdge(self.nodes[item.obj_id], self.nodes[self.items[t].obj_id])
 
-            if self.center_node and focus_node_id:
-                widget = ida_kernwin.find_widget(self._title)
-                ida_graph.viewer_center_on(widget, focus_node_id)
-
             self.redraw = False
-            # use new graph
+            # use new graph items
             return True
 
         for n in range(len(self.items)):
@@ -335,16 +337,12 @@ class cfunc_graph_t(ida_graph.GraphViewer):
             if highlight_node:
                 framecol = self.COLOR_FRAME_HIGHLIGHT
             if focus_node:
-                focus_node_id = nid
+                self.focus_node_id = nid
                 framecol = self.COLOR_FRAME_FOCUS
 
             p = ida_graph.node_info_t()            
             p.frame_color = framecol
             self.SetNodeInfo(nid, p, ida_graph.NIF_FRAME_COLOR)
-
-        if self.center_node and focus_node_id:
-            widget = ida_kernwin.find_widget(self._title)
-            ida_graph.viewer_center_on(widget, focus_node_id)
         return False
 
     def OnGetText(self, node_id):
