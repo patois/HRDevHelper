@@ -166,6 +166,9 @@ class cfunc_graph_t(ida_graph.GraphViewer):
                 ida_hexrays.cot_var]:
             name = self._get_expr_name(expr)
             parts.append("%s.%d %s" % (type_name, expr.refwidth, name))
+
+            if op == ida_hexrays.cot_obj:
+                parts.append("obj_ea: %x" % item.obj_ea)
         elif op in [
                 ida_hexrays.cot_num,
                 ida_hexrays.cot_helper,
