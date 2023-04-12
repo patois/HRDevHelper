@@ -23,7 +23,11 @@ The plugin's functionality is accessible via right-click in a decompiler view or
 
 By default, HRDevHelper visually highlights all ctree items in a graph that correspond to a current single decompiled line of code. Making a selection of multiple lines highlights nodes accordingly.
 
+The two screenshots below show the context viewer.
+
 ![HRDevHelper context view](/rsrc/hrdevctx.png?raw=true)
+
+![HRDevHelper context view](/rsrc/hrdevctx2.png?raw=true)
 
 In addition to the keyboard shortcuts that are made available in decompiler views, the graphs created by HRDevHelper have additional keyboard shortcuts in place as shown below. 
 
